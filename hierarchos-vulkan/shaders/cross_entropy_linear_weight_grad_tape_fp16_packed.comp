@@ -76,7 +76,7 @@ void main() {
         for (uint local_row = 0u; local_row < row_count; ++local_row) {
             if (hidden_lane == 0u) {
                 uint row = row_base + local_row;
-                if (active_vocab_row) {
+                if (active_vocab_row && chunk_ce_weight[local_row] != 0.0) {
                     float probability = exp(
                         logits[row * pc.output_dim + out_col] - chunk_ce_max[local_row]
                     ) * chunk_ce_inv_sum[local_row];
@@ -124,6 +124,9 @@ void main() {
                 ) {
                     float chunk_sum = 0.0;
                     for (uint local_row = 0u; local_row < row_count; ++local_row) {
+                        if (chunk_ce_weight[local_row] == 0.0) {
+                            continue;
+                        }
                         chunk_sum = fma(
                             grad_rows[vocab_lane][local_row],
                             grad_hidden_tile[local_row][tile_col],

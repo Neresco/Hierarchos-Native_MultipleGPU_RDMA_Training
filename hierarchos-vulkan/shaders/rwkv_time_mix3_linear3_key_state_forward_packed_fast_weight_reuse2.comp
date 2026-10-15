@@ -31,7 +31,7 @@ layout(set = 0, binding = 12, std430) writeonly buffer ReceptanceBuffer { float 
 layout(set = 0, binding = 13, std430) writeonly buffer ValueBuffer { float v[]; };
 layout(set = 0, binding = 14, std430) writeonly buffer ScaledKeyBuffer { float scaled_k[]; };
 layout(set = 0, binding = 15, std430) writeonly buffer TimeMixBuffer { float tmix[]; };
-layout(set = 0, binding = 16, std430) buffer PackedNewStateBuffer { float packed_new_state[]; };
+layout(set = 0, binding = 16, std430) writeonly buffer PackedNewStateBuffer { float packed_new_state[]; };
 layout(set = 0, binding = 17, std430) readonly buffer PreviousTimeMixBuffer { float previous_tm[]; };
 
 layout(push_constant) uniform Push {

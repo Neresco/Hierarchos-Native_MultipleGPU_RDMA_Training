@@ -231,6 +231,9 @@ struct TextDatasetOptions {
     min_response_tokens: usize,
     drop_empty_completions: bool,
     max_length: usize,
+    // Hierarchos consumes one causal stream. Keep the Transformer frontend's
+    // existing tokenization contract unless its caller explicitly opts in.
+    canonical_causal_eos: bool,
 }
 
 impl Default for TextDatasetOptions {
@@ -249,6 +252,7 @@ impl Default for TextDatasetOptions {
             min_response_tokens: 1,
             drop_empty_completions: true,
             max_length: 1024,
+            canonical_causal_eos: false,
         }
     }
 }
@@ -569,7 +573,10 @@ fn run_training(mode: &str, mut argv: VecDeque<OsString>) -> Result<u8, String> 
     let mut hf_dataset_revision = "main".to_string();
     let mut hf_cache_dir: Option<PathBuf> = None;
     let mut output_dir = PathBuf::from("./hierarchos_model");
-    let mut text_options = TextDatasetOptions::default();
+    let mut text_options = TextDatasetOptions {
+        canonical_causal_eos: true,
+        ..TextDatasetOptions::default()
+    };
     let mut assistant_recovery = false;
     let mut trainer_args = root_cli_training_defaults();
     let mut contract_overrides = ArchitectureContractOverrides::new();
@@ -3784,6 +3791,15 @@ fn special_token_content(value: &Value) -> Option<&str> {
 }
 
 fn resolve_eos_token_id(tokenizer: &Tokenizer, tokenizer_path: &Path) -> Result<u32, String> {
+    find_eos_token_id(tokenizer, tokenizer_path)?.ok_or_else(|| {
+        format!(
+            "raw-text native training requires a resolvable EOS token for {}; add tokenizer_config.json/special_tokens_map.json with eos_token or use a tokenizer that exposes a standard EOS token",
+            tokenizer_path.display()
+        )
+    })
+}
+
+fn find_eos_token_id(tokenizer: &Tokenizer, tokenizer_path: &Path) -> Result<Option<u32>, String> {
     let tokenizer_dir = tokenizer_path.parent().unwrap_or_else(|| Path::new("."));
     for name in [
         "tokenizer_config.json",
@@ -3805,25 +3821,22 @@ fn resolve_eos_token_id(tokenizer: &Tokenizer, tokenizer_path: &Path) -> Result<
                     .ok()
                     .is_some_and(|id| id < tokenizer.get_vocab_size(true))
                 {
-                    return Ok(id);
+                    return Ok(Some(id));
                 }
             }
         }
         if let Some(token) = document.get("eos_token").and_then(special_token_content) {
             if let Some(id) = tokenizer.token_to_id(token) {
-                return Ok(id);
+                return Ok(Some(id));
             }
         }
     }
     for token in ["<|endoftext|>", "</s>", "<eos>", "<EOS>"] {
         if let Some(id) = tokenizer.token_to_id(token) {
-            return Ok(id);
+            return Ok(Some(id));
         }
     }
-    Err(format!(
-        "raw-text native training requires a resolvable EOS token for {}; add tokenizer_config.json/special_tokens_map.json with eos_token or use a tokenizer that exposes a standard EOS token",
-        tokenizer_path.display()
-    ))
+    Ok(None)
 }
 
 fn tokenize_jsonl(
@@ -3897,7 +3910,9 @@ fn tokenize_row(
             .encode(text, true)
             .map_err(|error| error.to_string())?;
         let mut ids = encoding.get_ids().to_vec();
-        ids.push(eos_token_id);
+        if !options.canonical_causal_eos || ids.last().copied() != Some(eos_token_id) {
+            ids.push(eos_token_id);
+        }
         if options.max_length > 0 && ids.len() > options.max_length {
             ids.truncate(options.max_length.saturating_sub(1));
             ids.push(eos_token_id);
@@ -3972,8 +3987,13 @@ fn tokenize_row(
     let prompt_encoding = tokenizer
         .encode(prefix, true)
         .map_err(|error| error.to_string())?;
+    let prompt_ids = if options.canonical_causal_eos {
+        open_causal_prompt_ids(&prompt_encoding, Some(eos_token_id))
+    } else {
+        prompt_encoding.get_ids().to_vec()
+    };
     let Some((ids, labels, weights, retained_response_tokens)) = compose_prompt_response(
-        prompt_encoding.get_ids(),
+        &prompt_ids,
         &response_ids,
         eos_token_id,
         options,
@@ -3984,6 +4004,22 @@ fn tokenize_row(
         return Ok(None);
     }
     Ok(Some((ids, labels, weights)))
+}
+
+fn open_causal_prompt_ids(encoding: &tokenizers::Encoding, eos_token_id: Option<u32>) -> Vec<u32> {
+    let mut ids = encoding.get_ids().to_vec();
+    if let Some(eos_token_id) = eos_token_id {
+        // Training and chat leave prompts open for the response. Remove only
+        // closing EOS inserted by the postprocessor; keep literal prompt EOS
+        // and the first token, which may be BOS sharing the same ID as EOS.
+        while ids.len() > 1
+            && ids.last().copied() == Some(eos_token_id)
+            && encoding.get_special_tokens_mask()[ids.len() - 1] == 1
+        {
+            ids.pop();
+        }
+    }
+    ids
 }
 
 fn string_field(row: &Value, name: &str) -> Option<String> {
@@ -4045,12 +4081,15 @@ fn compose_prompt_response(
 ) -> Option<(Vec<u32>, Vec<i64>, Vec<f32>, usize)> {
     let mut prompt_ids = prompt_ids.to_vec();
     let mut full_response_ids = response_ids.to_vec();
-    full_response_ids.push(eos_token_id);
+    if !options.canonical_causal_eos || full_response_ids.last().copied() != Some(eos_token_id) {
+        full_response_ids.push(eos_token_id);
+    }
+    let response_token_count = full_response_ids.len().saturating_sub(1);
 
     if options.max_length > 0
         && prompt_ids.len().saturating_add(full_response_ids.len()) > options.max_length
     {
-        let min_answer_tokens = options.min_response_tokens.min(response_ids.len());
+        let min_answer_tokens = options.min_response_tokens.min(response_token_count);
         let mut min_response_total = options.max_length.min(min_answer_tokens.saturating_add(1));
         if min_response_total == 0 {
             min_response_total = options.max_length.min(1);
@@ -4977,7 +5016,7 @@ impl NativeSession {
                 model.config().vocab_size
             ));
         }
-        let eos_id = tokenizer.token_to_id("<|endoftext|>");
+        let eos_id = find_eos_token_id(&tokenizer, &tokenizer_path)?;
         let state = model.new_state();
         Ok(Self {
             model,
@@ -5180,12 +5219,13 @@ fn generate_text(
         .tokenizer
         .encode(formatted, true)
         .map_err(|error| format!("tokenizer encode failed: {error}"))?;
-    if encoding.is_empty() {
+    let prompt_ids = open_causal_prompt_ids(&encoding, session.eos_id);
+    if prompt_ids.is_empty() {
         return Err("tokenizer produced an empty prompt".to_string());
     }
     let mut logits = session
         .model
-        .prefill_last(encoding.get_ids(), &mut session.state)
+        .prefill_last(&prompt_ids, &mut session.state)
         .map_err(|error| format!("native prefill failed: {error}"))?;
     let mut sampler = Sampler::new(SamplingConfig {
         temperature: options.temperature,
@@ -6463,6 +6503,247 @@ mod tests {
         assert_eq!(labels, vec![-100, -100, 20, 21, 99]);
         assert_eq!(weights, vec![0.0, 0.0, 2.0, 2.0, 1.0]);
         assert_eq!(retained_response_tokens, 2);
+    }
+
+    fn eos_appending_test_tokenizer() -> Tokenizer {
+        let fixture = json!({
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": {"type": "Whitespace"},
+            "post_processor": {
+                "type": "TemplateProcessing",
+                "single": [
+                    {"SpecialToken": {"id": "[BOS]", "type_id": 0}},
+                    {"Sequence": {"id": "A", "type_id": 0}},
+                    {"SpecialToken": {"id": "[EOS]", "type_id": 0}}
+                ],
+                "pair": [
+                    {"SpecialToken": {"id": "[BOS]", "type_id": 0}},
+                    {"Sequence": {"id": "A", "type_id": 0}},
+                    {"Sequence": {"id": "B", "type_id": 1}},
+                    {"SpecialToken": {"id": "[EOS]", "type_id": 1}}
+                ],
+                "special_tokens": {
+                    "[BOS]": {"id": "[BOS]", "ids": [1], "tokens": ["[BOS]"]},
+                    "[EOS]": {"id": "[EOS]", "ids": [2], "tokens": ["[EOS]"]}
+                }
+            },
+            "decoder": null,
+            "model": {
+                "type": "WordLevel",
+                "vocab": {"[UNK]": 0, "[BOS]": 1, "[EOS]": 2, "hello": 3, "answer": 4},
+                "unk_token": "[UNK]"
+            }
+        });
+        Tokenizer::from_bytes(serde_json::to_vec(&fixture).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn native_causal_tokenization_appends_eos_once_and_preserves_bos() {
+        let tokenizer = eos_appending_test_tokenizer();
+        let options = TextDatasetOptions {
+            canonical_causal_eos: true,
+            max_length: 3,
+            ..TextDatasetOptions::default()
+        };
+        let (ids, labels, weights) =
+            tokenize_row(&tokenizer, &json!({"text": "hello"}), 2, &options)
+                .unwrap()
+                .unwrap();
+        assert_eq!(ids, vec![1, 3, 2]);
+        assert_eq!(labels, vec![1, 3, 2]);
+        assert_eq!(weights, vec![1.0; 3]);
+
+        let untruncated = TextDatasetOptions {
+            max_length: 0,
+            ..options
+        };
+        let (ids, _, _) = tokenize_row(&tokenizer, &json!({"text": "hello"}), 2, &untruncated)
+            .unwrap()
+            .unwrap();
+        assert_eq!(ids, vec![1, 3, 2]);
+
+        // The shared helper retains the Transformer caller's existing contract.
+        let (ids, _, _) = tokenize_row(
+            &tokenizer,
+            &json!({"text": "hello"}),
+            2,
+            &TextDatasetOptions::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ids, vec![1, 3, 2, 2]);
+    }
+
+    #[test]
+    fn native_causal_tokenization_keeps_prompt_open_before_answer() {
+        let tokenizer = eos_appending_test_tokenizer();
+        let options = TextDatasetOptions {
+            canonical_causal_eos: true,
+            train_prompt_tokens: false,
+            response_boundary_tokens: 1,
+            response_boundary_loss_weight: 2.0,
+            ..TextDatasetOptions::default()
+        };
+        let (ids, labels, weights) = tokenize_row(
+            &tokenizer,
+            &json!({"prompt": "hello", "completion": "answer"}),
+            2,
+            &options,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ids[0], 1, "retain the tokenizer's BOS");
+        assert_eq!(ids.iter().filter(|&&id| id == 2).count(), 1);
+        assert_eq!(&ids[ids.len() - 2..], &[4, 2]);
+        assert!(labels[..labels.len() - 2].iter().all(|&id| id == -100));
+        assert_eq!(&labels[labels.len() - 2..], &[4, 2]);
+        assert!(weights[..weights.len() - 2]
+            .iter()
+            .all(|&weight| weight == 0.0));
+        assert_eq!(&weights[weights.len() - 2..], &[2.0, 1.0]);
+
+        let chat_encoding = tokenizer
+            .encode("User: hello\n\nAssistant: ", true)
+            .unwrap();
+        let chat_prompt_ids = open_causal_prompt_ids(&chat_encoding, Some(2));
+        assert_eq!(&ids[..ids.len() - 2], chat_prompt_ids);
+
+        let legacy_options = TextDatasetOptions {
+            canonical_causal_eos: false,
+            ..options
+        };
+        let (legacy_ids, _, _) = tokenize_row(
+            &tokenizer,
+            &json!({"prompt": "hello", "completion": "answer"}),
+            2,
+            &legacy_options,
+        )
+        .unwrap()
+        .unwrap();
+        let mut expected = tokenizer
+            .encode("User: hello\n\nAssistant: ", true)
+            .unwrap()
+            .get_ids()
+            .to_vec();
+        expected.extend([4, 2]);
+        assert_eq!(legacy_ids, expected);
+    }
+
+    #[test]
+    fn native_causal_tokenization_preserves_literal_prompt_eos() {
+        let mut tokenizer = eos_appending_test_tokenizer();
+        tokenizer.add_special_tokens(&[tokenizers::AddedToken::from("[EOS]", true)]);
+        let encoding = tokenizer.encode("hello [EOS]", true).unwrap();
+        assert_eq!(encoding.get_ids(), &[1, 3, 2, 2]);
+        assert_eq!(encoding.get_special_tokens_mask(), &[1, 0, 0, 1]);
+        assert_eq!(open_causal_prompt_ids(&encoding, Some(2)), vec![1, 3, 2]);
+        assert_eq!(open_causal_prompt_ids(&encoding, None), encoding.get_ids());
+
+        let shared_bos_eos = tokenizers::processors::template::TemplateProcessing::builder()
+            .try_single("[BOS] $A [BOS]")
+            .unwrap()
+            .special_tokens(vec![("[BOS]", 1)])
+            .build()
+            .unwrap();
+        tokenizer.with_post_processor(Some(shared_bos_eos));
+        let empty = tokenizer.encode("", true).unwrap();
+        assert_eq!(empty.get_ids(), &[1, 1]);
+        assert_eq!(open_causal_prompt_ids(&empty, Some(1)), vec![1]);
+    }
+
+    #[test]
+    fn native_causal_tokenization_response_eos_is_not_answer_content() {
+        let options = TextDatasetOptions {
+            canonical_causal_eos: true,
+            response_boundary_tokens: 8,
+            response_boundary_loss_weight: 2.0,
+            ..TextDatasetOptions::default()
+        };
+        let (ids, _, weights, retained) =
+            compose_prompt_response(&[10, 11], &[20, 99], 99, &options).unwrap();
+        assert_eq!(ids, vec![10, 11, 20, 99]);
+        assert_eq!(weights, vec![1.0, 1.0, 2.0, 1.0]);
+        assert_eq!(retained, 1);
+
+        let truncated = TextDatasetOptions {
+            max_length: 3,
+            ..options
+        };
+        let (ids, _, _, retained) =
+            compose_prompt_response(&[10, 11], &[20, 99], 99, &truncated).unwrap();
+        assert_eq!(ids, vec![11, 20, 99]);
+        assert_eq!(retained, 1);
+    }
+
+    #[test]
+    fn native_causal_tokenization_and_chat_share_eos_resolution() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "hierarchos-native-cli-eos-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let tokenizer_path = root.join("tokenizer.json");
+        let make_tokenizer = |end_token: &str| {
+            let fixture = json!({
+                "model": {
+                    "type": "WordLevel",
+                    "vocab": {"[UNK]": 0, (end_token): 1, "hello": 2},
+                    "unk_token": "[UNK]"
+                }
+            });
+            Tokenizer::from_bytes(serde_json::to_vec(&fixture).unwrap()).unwrap()
+        };
+        let tokenizer = make_tokenizer("[END]");
+        assert_eq!(
+            find_eos_token_id(&tokenizer, &tokenizer_path).unwrap(),
+            None
+        );
+        assert!(resolve_eos_token_id(&tokenizer, &tokenizer_path).is_err());
+
+        let sidecar = root.join("special_tokens_map.json");
+        fs::write(&sidecar, br#"{"eos_token":{"content":"[END]"}}"#).unwrap();
+        let eos = find_eos_token_id(&tokenizer, &tokenizer_path).unwrap();
+        assert_eq!(eos, Some(1));
+        assert_eq!(
+            eos,
+            Some(resolve_eos_token_id(&tokenizer, &tokenizer_path).unwrap())
+        );
+        assert!(should_stop_generation_from_uncertainty(
+            &[-20.0, 20.0, -20.0],
+            1,
+            eos,
+            0.0,
+            3,
+            0.05,
+            0.5,
+        ));
+
+        fs::remove_file(&sidecar).unwrap();
+        let standard = make_tokenizer("</s>");
+        let eos = find_eos_token_id(&standard, &tokenizer_path).unwrap();
+        assert_eq!(eos, Some(1));
+        assert_eq!(
+            eos,
+            Some(resolve_eos_token_id(&standard, &tokenizer_path).unwrap())
+        );
+        assert!(should_stop_generation_from_uncertainty(
+            &[-20.0, 20.0, -20.0],
+            1,
+            eos,
+            0.0,
+            3,
+            0.05,
+            0.5,
+        ));
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -9,6 +9,8 @@ mod adapter;
 mod checkpoint;
 mod control;
 mod full_training_graph;
+#[cfg(test)]
+mod hierarchos_ce_mask_tests;
 mod lm_execution;
 mod lora;
 mod mixed_precision;
@@ -64,9 +66,10 @@ pub use full_training_graph::{
     HierarchosFullModelUpdateMode, HierarchosFusedRecurrentLossStepResult,
     HierarchosGradientClipStepResult, HierarchosGradientStreamStats,
     HierarchosJointTrainingAdapterConstraint, HierarchosJointTrainingAdapterMemoryPlan,
-    HierarchosLabeledSequenceObjective, HierarchosLearningRateScheduleState,
-    HierarchosLossCoupledTokenInput, HierarchosLossCoupledTokenStepResult,
-    HierarchosLossScaleStepDecision, HierarchosLossScalingState, HierarchosLowRankG2GradientTrace,
+    HierarchosLabeledSequenceObjective, HierarchosLanguageLossSummary,
+    HierarchosLearningRateScheduleState, HierarchosLossCoupledTokenInput,
+    HierarchosLossCoupledTokenStepResult, HierarchosLossScaleStepDecision,
+    HierarchosLossScalingState, HierarchosLowRankG2GradientTrace,
     HierarchosLtmAlignmentControllerState, HierarchosManagerHardActInput,
     HierarchosManagerHardActResult, HierarchosParameterStateContract,
     HierarchosPendingGradientShard, HierarchosPendingGradientTransportSource,

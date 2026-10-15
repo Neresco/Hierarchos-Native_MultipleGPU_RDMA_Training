@@ -16,7 +16,7 @@ layout(set = 0, binding = 2, std430) readonly buffer BetaBuffer { float beta_val
 // sequence-length times state-size tape.
 layout(set = 0, binding = 3, std430) buffer ReplayStateBuffer { float replay_state[]; };
 layout(set = 0, binding = 4, std430) readonly buffer GradOutputBuffer { float grad_output[]; };
-layout(set = 0, binding = 5, std430) buffer GradPackedQkvBuffer { float grad_packed_qkv[]; };
+layout(set = 0, binding = 5, std430) writeonly buffer GradPackedQkvBuffer { float grad_packed_qkv[]; };
 layout(set = 0, binding = 6, std430) writeonly buffer GradQExpandedBuffer { float grad_q_expanded[]; };
 layout(set = 0, binding = 7, std430) writeonly buffer GradKExpandedBuffer { float grad_k_expanded[]; };
 layout(set = 0, binding = 8, std430) writeonly buffer GradDecayBuffer { float grad_decay[]; };

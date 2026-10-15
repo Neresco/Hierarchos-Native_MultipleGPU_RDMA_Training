@@ -20,9 +20,9 @@ use crate::control::{
 use crate::projection_graph::{GraphPackedStateSlotOp, ManagerWorkerProjectionGraph};
 use crate::rwkv_low_rank::RwkvLowRankFp16ParameterMirrors;
 use crate::rwkv_optimizer::{
-    OptimizerGenerationRangeConsumer, RwkvDeviceControlledStepPending,
+    OptimizerGenerationRangeConsumer, RwkvDecayClass, RwkvDeviceControlledStepPending,
     RwkvParameterStorageMirrorBinding, RwkvPendingGradientSource, RwkvPersistentAdamW,
-    RwkvDecayClass, RwkvReplicaStatePlane, RwkvReplicaStateSource, RwkvTrainableRef,
+    RwkvReplicaStatePlane, RwkvReplicaStateSource, RwkvTrainableRef,
 };
 use crate::rwkv_tbptt::{RwkvTbpttGraphTicket, RwkvTbpttGraphWorkspace};
 use crate::stochastic::HierarchosCanonicalRngState;
@@ -3809,10 +3809,77 @@ struct HierarchosTokenTapeReadback {
     active_history: Vec<Vec<GpuBuffer>>,
 }
 
+/// Weighted CE + z-loss before the optional backward cap. The numerator and
+/// denominator can be merged across tapes, batches, and devices without taking
+/// a mean of independently normalized means. Ponder, commitment, and LTM retain
+/// their own objective denominators and are not included here.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HierarchosLanguageLossSummary {
+    pub weighted_sum: f64,
+    pub supervision_mass: f64,
+}
+
+impl HierarchosLanguageLossSummary {
+    pub fn mean(self) -> Option<f64> {
+        (self.supervision_mass > 0.0).then(|| self.weighted_sum / self.supervision_mass)
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.weighted_sum += other.weighted_sum;
+        self.supervision_mass += other.supervision_mass;
+    }
+
+    fn add_rows(&mut self, losses: &[f32], weights: Option<&[f32]>) -> Result<()> {
+        if weights.is_some_and(|weights| weights.len() != losses.len()) {
+            bail!("language-loss weights do not match row losses");
+        }
+        for (row, &loss) in losses.iter().enumerate() {
+            let weight = weights.map_or(1.0, |weights| weights[row]);
+            if !weight.is_finite() || weight < 0.0 {
+                bail!("language-loss weight must be finite and non-negative");
+            }
+            // An ignored target contributes neither a value nor denominator.
+            if weight == 0.0 {
+                continue;
+            }
+            if !loss.is_finite() {
+                bail!("Vulkan supervised language loss is non-finite");
+            }
+            self.weighted_sum += f64::from(loss) * f64::from(weight);
+            self.supervision_mass += f64::from(weight);
+        }
+        Ok(())
+    }
+}
+
+fn read_token_tape_losses<'a>(
+    readbacks: &[GpuBuffer],
+    batch: usize,
+    weights: impl IntoIterator<Item = Option<&'a [f32]>>,
+) -> Result<(Vec<f32>, HierarchosLanguageLossSummary)> {
+    let mut weights = weights.into_iter();
+    let mut summary = HierarchosLanguageLossSummary::default();
+    let mut losses = Vec::with_capacity(readbacks.len());
+    for slot in readbacks {
+        let row_weights = weights.next().context("missing token loss weights")?;
+        let rows = slot.read_f32(batch)?;
+        summary.add_rows(&rows, row_weights)?;
+        // Preserve the historical unweighted per-token diagnostic ABI.
+        let loss = rows.iter().sum::<f32>() / batch as f32;
+        if !loss.is_finite() {
+            bail!("Vulkan token-tape reverse produced non-finite loss");
+        }
+        losses.push(loss);
+    }
+    anyhow::ensure!(weights.next().is_none(), "extra token loss weights");
+    Ok((losses, summary))
+}
+
 #[derive(Debug)]
 pub struct HierarchosTokenTapeTrainResult {
     pub tokens: usize,
     pub losses: Vec<f32>,
+    pub language_loss: HierarchosLanguageLossSummary,
     pub controls: Vec<HierarchosTokenTapeControlSnapshot>,
     pub final_h_packed_state: Vec<f32>,
     pub final_l_packed_state: Vec<f32>,
@@ -12514,21 +12581,16 @@ impl HierarchosTrainingGraph {
         tape.len = steps.len();
         let optimizer = optimizer.context("token tape produced no optimizer result")?;
         self.output.finalize_external_optimizer_step(optimizer.step);
-        let losses = tape.loss_readbacks[..steps.len()]
-            .iter()
-            .map(|slot| {
-                let rows = slot.read_f32(tape.batch)?;
-                let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                if !loss.is_finite() {
-                    bail!("Vulkan token-tape reverse produced non-finite loss");
-                }
-                Ok(loss)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let (losses, language_loss) = read_token_tape_losses(
+            &tape.loss_readbacks[..steps.len()],
+            tape.batch,
+            steps.iter().map(|step| step.supervision_weights),
+        )?;
         let controls = self.finalize_token_tape_result_readback(tape.batch, steps, readback)?;
         Ok(HierarchosTokenTapeTrainResult {
             tokens: steps.len(),
             losses,
+            language_loss,
             controls,
             final_h_packed_state: tape.h_final_state_readback.read_f32(tape.h_state_len)?,
             final_l_packed_state: tape.l_final_state_readback.read_f32(tape.l_state_len)?,
@@ -13450,22 +13512,17 @@ impl HierarchosTrainingGraph {
             self.reset_ltm_alignment_window_bookkeeping();
             self.output.finalize_external_optimizer_step(optimizer.step);
         }
-        let losses = tape.loss_readbacks[..steps.len()]
-            .iter()
-            .map(|slot| {
-                let rows = slot.read_f32(tape.batch)?;
-                let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                if !loss.is_finite() {
-                    bail!("Vulkan raw-token tape reverse produced non-finite loss");
-                }
-                Ok(loss)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let (losses, language_loss) = read_token_tape_losses(
+            &tape.loss_readbacks[..steps.len()],
+            tape.batch,
+            steps.iter().map(|step| step.supervision_weights),
+        )?;
         let controls =
             self.finalize_token_tape_result_readback_with_count(tape.batch, steps.len(), readback)?;
         Ok(HierarchosTokenTapeTrainResult {
             tokens: steps.len(),
             losses,
+            language_loss,
             controls,
             final_h_packed_state: tape.h_final_state_readback.read_f32(tape.h_state_len)?,
             final_l_packed_state: tape.l_final_state_readback.read_f32(tape.l_state_len)?,
@@ -13777,22 +13834,17 @@ impl HierarchosTrainingGraph {
         let mut results = Vec::with_capacity(sequences.len());
         for ((tape, sequence), readback) in arena.tapes.iter_mut().zip(sequences).zip(readbacks) {
             tape.len = sequence.steps.len();
-            let losses = tape.loss_readbacks[..sequence.steps.len()]
-                .iter()
-                .map(|slot| {
-                    let rows = slot.read_f32(tape.batch)?;
-                    let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                    if !loss.is_finite() {
-                        bail!("Vulkan token-tape microbatch reverse produced non-finite loss");
-                    }
-                    Ok(loss)
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let (losses, language_loss) = read_token_tape_losses(
+                &tape.loss_readbacks[..sequence.steps.len()],
+                tape.batch,
+                sequence.steps.iter().map(|step| step.supervision_weights),
+            )?;
             let controls =
                 self.finalize_token_tape_result_readback(tape.batch, sequence.steps, readback)?;
             results.push(HierarchosTokenTapeTrainResult {
                 tokens: sequence.steps.len(),
                 losses,
+                language_loss,
                 controls,
                 final_h_packed_state: tape.h_final_state_readback.read_f32(tape.h_state_len)?,
                 final_l_packed_state: tape.l_final_state_readback.read_f32(tape.l_state_len)?,
@@ -14709,17 +14761,11 @@ impl HierarchosTrainingGraph {
         let mut readback_iter = readbacks.into_iter().flatten();
         for (tape, sequence) in arena.tapes.iter_mut().zip(sequences) {
             tape.len = sequence.steps.len();
-            let losses = tape.loss_readbacks[..sequence.steps.len()]
-                .iter()
-                .map(|slot| {
-                    let rows = slot.read_f32(tape.batch)?;
-                    let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                    if !loss.is_finite() {
-                        bail!("Vulkan raw-token tape microbatch reverse produced non-finite loss");
-                    }
-                    Ok(loss)
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let (losses, language_loss) = read_token_tape_losses(
+                &tape.loss_readbacks[..sequence.steps.len()],
+                tape.batch,
+                sequence.steps.iter().map(|step| step.supervision_weights),
+            )?;
             let (
                 controls,
                 final_h_packed_state,
@@ -14747,6 +14793,7 @@ impl HierarchosTrainingGraph {
             results.push(HierarchosTokenTapeTrainResult {
                 tokens: sequence.steps.len(),
                 losses,
+                language_loss,
                 controls,
                 final_h_packed_state,
                 final_l_packed_state,
@@ -15240,22 +15287,17 @@ impl HierarchosTrainingGraph {
         let mut results = Vec::with_capacity(sequences.len());
         for ((tape, sequence), readback) in arena.tapes.iter_mut().zip(sequences).zip(readbacks) {
             tape.len = sequence.steps.len();
-            let losses = tape.loss_readbacks[..sequence.steps.len()]
-                .iter()
-                .map(|slot| {
-                    let rows = slot.read_f32(tape.batch)?;
-                    let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                    if !loss.is_finite() {
-                        bail!("Vulkan sparse token-tape reverse produced non-finite loss");
-                    }
-                    Ok(loss)
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let (losses, language_loss) = read_token_tape_losses(
+                &tape.loss_readbacks[..sequence.steps.len()],
+                tape.batch,
+                sequence.steps.iter().map(|step| step.supervision_weights),
+            )?;
             let controls =
                 self.finalize_token_tape_result_readback(tape.batch, sequence.steps, readback)?;
             results.push(HierarchosTokenTapeTrainResult {
                 tokens: sequence.steps.len(),
                 losses,
+                language_loss,
                 controls,
                 final_h_packed_state: tape.h_final_state_readback.read_f32(tape.h_state_len)?,
                 final_l_packed_state: tape.l_final_state_readback.read_f32(tape.l_state_len)?,
@@ -16360,17 +16402,11 @@ impl HierarchosTrainingGraph {
         let mut readback_iter = readbacks.into_iter().flatten();
         for (tape, sequence) in arena.tapes.iter_mut().zip(sequences) {
             tape.len = sequence.steps.len();
-            let losses = tape.loss_readbacks[..sequence.steps.len()]
-                .iter()
-                .map(|slot| {
-                    let rows = slot.read_f32(tape.batch)?;
-                    let loss = rows.iter().sum::<f32>() / tape.batch as f32;
-                    if !loss.is_finite() {
-                        bail!("Vulkan raw sparse token-tape reverse produced non-finite loss");
-                    }
-                    Ok(loss)
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let (losses, language_loss) = read_token_tape_losses(
+                &tape.loss_readbacks[..sequence.steps.len()],
+                tape.batch,
+                sequence.steps.iter().map(|step| step.supervision_weights),
+            )?;
             let (
                 controls,
                 final_h_packed_state,
@@ -16398,6 +16434,7 @@ impl HierarchosTrainingGraph {
             results.push(HierarchosTokenTapeTrainResult {
                 tokens: sequence.steps.len(),
                 losses,
+                language_loss,
                 controls,
                 final_h_packed_state,
                 final_l_packed_state,

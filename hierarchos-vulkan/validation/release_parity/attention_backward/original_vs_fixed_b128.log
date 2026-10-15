@@ -1,0 +1,6 @@
+bench_shape bench_mode0 backward=false workgroups=32768 query=64 key=64 batch=128 heads=4 kv_heads=2
+timing bench_mode0 backward=false repeats=1
+benchmark bench_mode0 backward=false baseline_ms=201.352 optimized_ms=33.786 speedup=5.96
+bench_shape bench_mode0 backward=true workgroups=256 query=64 key=64 batch=128 heads=4 kv_heads=2
+timing bench_mode0 backward=true repeats=1
+benchmark bench_mode0 backward=true baseline_ms=78.561 optimized_ms=71.139 speedup=1.10

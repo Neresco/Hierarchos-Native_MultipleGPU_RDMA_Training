@@ -83,6 +83,47 @@ The native Transformer path is not a PyTorch device plugin and does not register
 - Checked-in SPIR-V binaries for ordinary builds; a shader compiler is not required just to build and run the release backend.
 - Explicit numerical/parity tooling against reference PyTorch/Transformers implementations for development qualification.
 
+## Vulkan training optimizations — October 15, 2026
+
+The training backend now reuses matrix tiles and attention scores, shares compiled
+pipelines, and batches more gradient accumulations into each dispatch. The changes
+preserve the original kernels' arithmetic order and include scalar/streaming and
+device-capability fallbacks.
+
+- **Dense projections:** shared-memory tiling for FP32 and packed-FP16 linear
+  forward, bias/residual projections, and parameter-matmul forward/input gradients.
+- **Attention and normalization:** cached attention row scores/probabilities,
+  shared Qwen gated-RMS statistics, removal of a redundant RMSNorm backward scan,
+  and tiled reads for the fused low-rank LayerNorm producer.
+- **Runtime and optimizer:** per-device pipeline sharing, conservative SPIR-V
+  access reflection for barrier elision, audited storage-buffer qualifiers,
+  workgroup-shared AdamW bias corrections, and eight-way gradient accumulation
+  with four-way/scalar fallbacks.
+- **Measurement and release checks:** sampled GPU profiling, shape-matched
+  placement reports, a controlled placement probe, kernel output goldens, and
+  full training-state comparison after every optimizer update.
+
+On the local AMD device, the fixed small training fixture records **6,464
+dispatches instead of 6,912** and **3,076 shader barriers instead of 3,412**.
+Earlier kernel A/B measurements found a **2.67× median dense-projection speedup**
+for the measured training shapes, **4.6–6.2× attention-forward speedups**, and
+**10.3–11.8× Qwen gated-RMS weight-gradient speedups**. These are individual-kernel
+measurements, not whole-training speedup claims. A subsequent attention-backward
+fix removes unnecessary workgroup cache storage: at batch 128, backward falls
+from **263.8 ms to about 71 ms**, faster than the **78.6 ms** original kernel,
+with bit-identical gradients. See the [backward regression closure](hierarchos-vulkan/validation/ATTENTION_BACKWARD_PERFORMANCE.md).
+
+The final debug and release gates both pass: **406 kernel invocations are
+bit-identical to the original artifacts**, **3,817 tensor digests match over 13
+training steps**, and **86 affected shader variants reproduce and validate**.
+The library/trainer suites pass **706 + 40 tests**, with nine library microprofiles
+explicitly ignored. This optimization qualification is specific to the tested AMD
+device; it does not extend the earlier cross-vendor qualification to these changes.
+
+See the [backend optimization details](hierarchos-vulkan/README.md#training-kernel-optimizations-and-verification),
+[numerical sign-off and reproduction commands](hierarchos-vulkan/validation/SHIP_PARITY.md),
+and [development measurements](PROGRESS_HIERARCHOS_VULKAN_TRAINING_OPTIMIZATIONS.md).
+
 ## Requirements
 
 For normal native use you need:

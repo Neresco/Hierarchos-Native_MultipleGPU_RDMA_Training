@@ -66,6 +66,16 @@ void main() {
     if (row >= pc.rows) {
         return;
     }
+    // All lanes take this branch together, before any shared-memory barrier.
+    if (row_stats[row * 5u + 4u] == 0.0) {
+        for (uint in_col = lane; in_col < pc.input_dim; in_col += 64u) {
+            grad_input[row * pc.input_dim + in_col] = 0.0;
+        }
+        for (uint out_col = lane; out_col < pc.output_dim; out_col += 64u) {
+            grad_logits[row * pc.output_dim + out_col] = 0.0;
+        }
+        return;
+    }
     float mean = norm_mean[row];
     float rstd = norm_rstd[row];
     uint x_base = row * pc.input_dim;

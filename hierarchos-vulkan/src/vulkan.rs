@@ -4,7 +4,7 @@ use std::{
     io::Cursor,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, Weak,
     },
     time::Instant,
 };
@@ -19,6 +19,9 @@ use ash::{util::read_spv, vk, vk::Handle, Device, Entry, Instance};
 use windows_sys::Win32::Foundation::CloseHandle;
 
 include!(concat!(env!("OUT_DIR"), "/shader_debug_registry.rs"));
+
+#[path = "spirv_access.rs"]
+mod spirv_access;
 
 struct DeviceInner {
     _entry: Entry,
@@ -93,6 +96,7 @@ impl Drop for DeviceInner {
                     for chunk in profile.chunks {
                         self.device.destroy_query_pool(chunk.pool, None);
                     }
+                    self.device.destroy_query_pool(profile.span_pool, None);
                 }
                 for chunk in retirement.descriptor_pools.drain(..) {
                     self.device.destroy_descriptor_pool(chunk.pool, None);
@@ -365,6 +369,7 @@ impl DeviceInner {
                     for chunk in profile.chunks {
                         self.device.destroy_query_pool(chunk.pool, None);
                     }
+                    self.device.destroy_query_pool(profile.span_pool, None);
                 }
             }
             for chunk in retirement.descriptor_pools.drain(..) {
@@ -4623,6 +4628,9 @@ pub(crate) struct ComputeBatch {
     pending_shader_buffers: HashSet<BufferRegionKey>,
     pending_shader_reads: HashSet<BufferRegionKey>,
     pending_shader_writes: HashSet<BufferRegionKey>,
+    /// Set by `shader_barrier` and cleared by the next recorded dispatch, so the
+    /// kernel profiler can label a bracket as following a barrier.
+    barrier_since_last_dispatch: bool,
     dispatch_dependency_trace: Option<DispatchDependencyTrace>,
     kernel_timestamp_profile: Option<KernelTimestampProfile>,
     watchdog_submission_slicing_recommended: bool,
@@ -4934,7 +4942,15 @@ const UPLOAD_ARENA_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 const UPLOAD_ARENA_ALIGNMENT: usize = 16;
 const KERNEL_PROFILE_DISPATCHES_PER_POOL: usize = 4096;
 const KERNEL_PROFILE_TOP_SHADERS: usize = 24;
+const KERNEL_PROFILE_TOP_SHADERS_ENV: &str = "HIERARCHOS_VULKAN_PROFILE_TOP_SHADERS";
 const KERNEL_PROFILE_ENV: &str = "HIERARCHOS_VULKAN_PROFILE_KERNELS";
+const KERNEL_PROFILE_SAMPLE_STRIDE_ENV: &str = "HIERARCHOS_VULKAN_PROFILE_SAMPLE_STRIDE";
+/// Prime, so that the sample does not phase-lock with a per-layer dispatch pattern: a
+/// stride sharing a factor with the dispatches per layer would timestamp the same
+/// positions in every layer and starve the rest. A shader's first dispatch is always
+/// sampled, so no kernel can drop out of the ranking, and `stride=1` restores exact
+/// timing for anyone who needs it.
+const KERNEL_PROFILE_DEFAULT_SAMPLE_STRIDE: usize = 17;
 const WATCHDOG_SUBMISSIONS_ENV: &str = "HIERARCHOS_VULKAN_WATCHDOG_SUBMISSIONS";
 const AMD_PCI_VENDOR_ID: u32 = 0x1002;
 
@@ -5006,24 +5022,96 @@ struct DispatchDependencyTrace {
     pending_shader_read_owners: HashMap<BufferRegionKey, u64>,
     pending_shader_write_owners: HashMap<BufferRegionKey, u64>,
     edges: HashMap<(u64, u64, DispatchHazard), usize>,
+    overlapping_views: HashMap<OverlappingViewHazard, usize>,
+    /// Same-buffer, different-key pairs examined, whether or not their ranges
+    /// overlapped. Without this the zero-overlap case would be indistinguishable
+    /// from a loop that never saw a comparable pair.
+    distinct_view_pairs_examined: usize,
+}
+
+/// Whether two region keys describe byte ranges of the same `VkBuffer` that
+/// overlap without being the same view. Equal keys are the case the elision check
+/// already handles, so they are excluded here.
+fn view_key_overlaps(current: BufferRegionKey, pending: BufferRegionKey) -> bool {
+    current.buffer == pending.buffer
+        && current != pending
+        && current.offset < pending.offset + pending.size
+        && pending.offset < current.offset + current.size
+}
+
+/// A binding whose byte range overlaps a region touched since the last shader
+/// barrier without being *identical* to it.
+///
+/// The elision check compares `BufferRegionKey` equality, because two buffer
+/// views of one allocation are the engine's unit of access. Overlapping but
+/// unequal views are therefore invisible to it: the hazard is real, but the keys
+/// do not match, so no barrier is inserted. Recording them is a diagnostic only —
+/// the dispatcher does not act on it — because acting on it would change barrier
+/// placement and needs its own numerical verification.
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+struct OverlappingViewHazard {
+    pending: BufferRegionKey,
+    current: BufferRegionKey,
+    pending_shader: Option<u64>,
+    current_shader: u64,
 }
 
 struct KernelTimestampProfile {
     timestamp_period_ns: f64,
     timestamp_valid_bits: u32,
     report_diagnostics: bool,
+    /// Every `sample_stride`-th dispatch of a shader is timestamped, and the first one
+    /// always is, so no shader can be starved out of the profile by the stride.
+    sample_stride: usize,
+    /// A dedicated query pair covering the whole submission. It cannot be derived from
+    /// the brackets once they are sampled, and the span is the one number that must
+    /// stay exact for the unattributed share to mean anything.
+    span_pool: vk::QueryPool,
+    /// Exact per-shader dispatch counts, maintained whether or not brackets are taken.
+    dispatches_by_shader: HashMap<u64, usize>,
+    dispatches: usize,
+    sampled: usize,
+    pending_sample: bool,
     chunks: Vec<KernelTimestampQueryChunk>,
+}
+
+/// One timestamped dispatch, with the shape it ran at so that two brackets are only
+/// ever compared when they describe the same work.
+#[derive(Clone, Copy)]
+struct KernelTimestampSample {
+    shader: u64,
+    /// Hash of the grid, push constants and binding count.
+    shape: u64,
+    groups: [u32; 3],
+    /// Whether the dispatch was recorded directly after a memory barrier. A bracket
+    /// that starts after a barrier can contain the barrier's flush and the dispatch's
+    /// launch latency, while a bracket that follows another dispatch back to back
+    /// contains execution only, so the two populations are kept apart instead of
+    /// averaged together.
+    after_barrier: bool,
 }
 
 struct KernelTimestampQueryChunk {
     pool: vk::QueryPool,
-    shader_signatures: Vec<u64>,
+    samples: Vec<KernelTimestampSample>,
 }
 
 #[derive(Default)]
 struct KernelTimestampStats {
+    /// Every dispatch of this shader, sampled or not.
     dispatches: usize,
+    sampled: usize,
     ticks: u128,
+}
+
+/// Sampled statistics for one (shader, shape) pair, split by placement.
+#[derive(Default)]
+struct KernelTimestampPlacement {
+    groups: [u32; 3],
+    after_barrier_dispatches: usize,
+    after_barrier_ticks: u128,
+    after_dispatch_dispatches: usize,
+    after_dispatch_ticks: u128,
 }
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
@@ -5071,6 +5159,28 @@ struct PipelineLayoutSignature {
 struct LayoutInterner {
     descriptor_layouts: HashMap<DescriptorLayoutSignature, vk::DescriptorSetLayout>,
     pipeline_layouts: HashMap<PipelineLayoutSignature, vk::PipelineLayout>,
+    compute_pipelines: HashMap<ComputePipelineSignature, Weak<SharedComputePipeline>>,
+}
+
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+struct ComputePipelineSignature {
+    shader: u64,
+    layout: PipelineLayoutSignature,
+}
+
+/// Layers and graphs on the same logical device often instantiate identical
+/// kernels. Share their compiled pipeline, while keeping access annotations on
+/// each kernel because those annotations belong to the command recorder.
+/// Weak interner entries release driver memory when the last kernel is dropped.
+struct SharedComputePipeline {
+    inner: Arc<DeviceInner>,
+    pipeline: vk::Pipeline,
+}
+
+impl Drop for SharedComputePipeline {
+    fn drop(&mut self) {
+        unsafe { self.inner.device.destroy_pipeline(self.pipeline, None) };
+    }
 }
 
 fn intern_kernel_layouts(
@@ -5251,10 +5361,54 @@ impl ComputeBatch {
                         .instance
                         .get_physical_device_properties(device.physical_device)
                 };
+                // The scheduler consumes this profile's totals when it decides how to
+                // schedule, so its collection stays exact; only the explicit diagnostic
+                // run samples, because that is the one whose own timestamps distort the
+                // step it is measuring.
+                let sample_stride = if explicit_kernel_profile {
+                    std::env::var(KERNEL_PROFILE_SAMPLE_STRIDE_ENV)
+                        .ok()
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                        .filter(|&stride| stride > 0)
+                        .unwrap_or(KERNEL_PROFILE_DEFAULT_SAMPLE_STRIDE)
+                } else {
+                    1
+                };
+                let span_pool = unsafe {
+                    device.inner.device.create_query_pool(
+                        &vk::QueryPoolCreateInfo::default()
+                            .query_type(vk::QueryType::TIMESTAMP)
+                            .query_count(2),
+                        None,
+                    )
+                }
+                .map_err(|err| anyhow!("creating Vulkan kernel-profile span pool: {err:?}"))?;
+                if let Err(err) = device.inner.with_command_pool_host_access(|| unsafe {
+                    device
+                        .inner
+                        .device
+                        .cmd_reset_query_pool(command_buffer, span_pool, 0, 2);
+                    device.inner.device.cmd_write_timestamp(
+                        command_buffer,
+                        vk::PipelineStageFlags::COMPUTE_SHADER,
+                        span_pool,
+                        0,
+                    );
+                }) {
+                    unsafe { device.inner.device.destroy_query_pool(span_pool, None) };
+                    device.inner.recycle_compute_command_buffer(command_buffer);
+                    return Err(err);
+                }
                 Some(KernelTimestampProfile {
                     timestamp_period_ns: f64::from(properties.limits.timestamp_period),
                     timestamp_valid_bits: queue_family.timestamp_valid_bits,
                     report_diagnostics: explicit_kernel_profile,
+                    sample_stride,
+                    span_pool,
+                    dispatches_by_shader: HashMap::new(),
+                    dispatches: 0,
+                    sampled: 0,
+                    pending_sample: false,
                     chunks: Vec::new(),
                 })
             }
@@ -5299,11 +5453,14 @@ impl ComputeBatch {
             pending_shader_buffers: HashSet::new(),
             pending_shader_reads: HashSet::new(),
             pending_shader_writes: HashSet::new(),
+            barrier_since_last_dispatch: false,
             dispatch_dependency_trace: std::env::var_os("HIERARCHOS_VULKAN_TRACE_DISPATCH_CHAINS")
                 .map(|_| DispatchDependencyTrace {
                     pending_shader_read_owners: HashMap::new(),
                     pending_shader_write_owners: HashMap::new(),
                     edges: HashMap::new(),
+                    overlapping_views: HashMap::new(),
+                    distinct_view_pairs_examined: 0,
                 }),
             kernel_timestamp_profile,
             watchdog_submission_slicing_recommended,
@@ -6183,6 +6340,7 @@ impl ComputeBatch {
             bail!("raw external semaphore submission received a null semaphore");
         }
 
+        self.record_kernel_timestamp_span_end()?;
         self.inner
             .with_command_pool_host_access(|| unsafe {
                 self.inner.device.end_command_buffer(self.command_buffer)
@@ -6342,6 +6500,7 @@ impl ComputeBatch {
             }
         }
 
+        self.record_kernel_timestamp_span_end()?;
         self.inner
             .with_command_pool_host_access(|| unsafe {
                 self.inner.device.end_command_buffer(self.command_buffer)
@@ -6454,6 +6613,39 @@ impl ComputeBatch {
 
     fn emit_dispatch_dependency_trace(&mut self) {
         if let Some(trace) = self.dispatch_dependency_trace.take() {
+            let mut overlapping = trace.overlapping_views.iter().collect::<Vec<_>>();
+            overlapping.sort_unstable_by(|left, right| right.1.cmp(left.1));
+            let total: usize = trace.overlapping_views.values().sum();
+            for (&hazard, &count) in overlapping.into_iter().take(12) {
+                let pending_shader = hazard
+                    .pending_shader
+                    .and_then(shader_debug_name)
+                    .unwrap_or("unknown");
+                let current_shader = shader_debug_name(hazard.current_shader).unwrap_or("unknown");
+                eprintln!(
+                    "hierarchos_vulkan_overlapping_view count={} pending_shader={} pending=buf:0x{:x}+{}:{} current_shader={} current=buf:0x{:x}+{}:{}",
+                    count,
+                    pending_shader,
+                    hazard.pending.buffer,
+                    hazard.pending.offset,
+                    hazard.pending.size,
+                    current_shader,
+                    hazard.current.buffer,
+                    hazard.current.offset,
+                    hazard.current.size,
+                );
+            }
+            // Only submissions that actually compared same-buffer views are worth a
+            // line; the empty pool-cycling submissions around a step are not.
+            if total > 0 || trace.distinct_view_pairs_examined > 0 {
+                eprintln!(
+                    "hierarchos_vulkan_overlapping_view_total overlapping_dispatch_pairs={} distinct_region_pairs={} same_buffer_distinct_view_pairs_examined={} (the exact-key elision check does not see the overlapping ones)",
+                    total,
+                    trace.overlapping_views.len(),
+                    trace.distinct_view_pairs_examined
+                );
+            }
+
             let mut edges = trace.edges.iter().collect::<Vec<_>>();
             edges.sort_unstable_by(|left, right| right.1.cmp(left.1));
             for (&(producer, consumer, hazard), &count) in edges.into_iter().take(24) {
@@ -6467,12 +6659,32 @@ impl ComputeBatch {
         }
     }
 
-    fn record_kernel_timestamp_begin(&mut self, shader_signature: u64) -> Result<()> {
+    fn record_kernel_timestamp_begin(
+        &mut self,
+        shader_signature: u64,
+        shape: u64,
+        groups: [u32; 3],
+        after_barrier: bool,
+    ) -> Result<()> {
         let Some(profile) = self.kernel_timestamp_profile.as_mut() else {
             return Ok(());
         };
+        let shader_dispatches = profile
+            .dispatches_by_shader
+            .entry(shader_signature)
+            .or_insert(0);
+        let sampled = profile.sample_stride <= 1
+            || *shader_dispatches == 0
+            || *shader_dispatches % profile.sample_stride == 0;
+        *shader_dispatches += 1;
+        profile.dispatches += 1;
+        profile.pending_sample = false;
+        if !sampled {
+            return Ok(());
+        }
+        profile.sampled += 1;
         let needs_chunk = profile.chunks.last().is_none_or(|chunk| {
-            chunk.shader_signatures.len() == KERNEL_PROFILE_DISPATCHES_PER_POOL
+            chunk.samples.len() == KERNEL_PROFILE_DISPATCHES_PER_POOL
         });
         if needs_chunk {
             let query_count = u32::try_from(KERNEL_PROFILE_DISPATCHES_PER_POOL * 2)
@@ -6489,14 +6701,14 @@ impl ComputeBatch {
             })?;
             profile.chunks.push(KernelTimestampQueryChunk {
                 pool,
-                shader_signatures: Vec::with_capacity(KERNEL_PROFILE_DISPATCHES_PER_POOL),
+                samples: Vec::with_capacity(KERNEL_PROFILE_DISPATCHES_PER_POOL),
             });
         }
         let chunk = profile
             .chunks
             .last_mut()
             .context("Vulkan kernel profiler lost its active query pool")?;
-        let query = u32::try_from(chunk.shader_signatures.len() * 2)
+        let query = u32::try_from(chunk.samples.len() * 2)
             .context("Vulkan kernel-profile query index exceeds u32 range")?;
         self.inner.with_command_pool_host_access(|| unsafe {
             self.inner.device.cmd_write_timestamp(
@@ -6506,7 +6718,13 @@ impl ComputeBatch {
                 query,
             );
         })?;
-        chunk.shader_signatures.push(shader_signature);
+        chunk.samples.push(KernelTimestampSample {
+            shader: shader_signature,
+            shape,
+            groups,
+            after_barrier,
+        });
+        profile.pending_sample = true;
         Ok(())
     }
 
@@ -6514,11 +6732,15 @@ impl ComputeBatch {
         let Some(profile) = self.kernel_timestamp_profile.as_mut() else {
             return Ok(());
         };
+        if !profile.pending_sample {
+            return Ok(());
+        }
+        profile.pending_sample = false;
         let chunk = profile
             .chunks
             .last()
             .context("Vulkan kernel profiler has no timestamp pool for dispatch end")?;
-        let query = u32::try_from(chunk.shader_signatures.len() * 2 - 1)
+        let query = u32::try_from(chunk.samples.len() * 2 - 1)
             .context("Vulkan kernel-profile query index exceeds u32 range")?;
         self.inner.with_command_pool_host_access(|| unsafe {
             self.inner.device.cmd_write_timestamp(
@@ -6538,7 +6760,33 @@ impl ComputeBatch {
         emit_kernel_timestamp_profile_for_inner(&self.inner, profile)
     }
 
-    fn shader_barrier(&mut self) -> Result<()> {
+    /// Close the submission's span bracket before the command buffer is ended.
+    /// Sampling may skip a dispatch's bracket but never this pair, so the span stays
+    /// exact at any sample stride.
+    fn record_kernel_timestamp_span_end(&self) -> Result<()> {
+        let Some(profile) = self.kernel_timestamp_profile.as_ref() else {
+            return Ok(());
+        };
+        let span_pool = profile.span_pool;
+        self.inner.with_command_pool_host_access(|| unsafe {
+            self.inner.device.cmd_write_timestamp(
+                self.command_buffer,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                span_pool,
+                1,
+            );
+        })?;
+        Ok(())
+    }
+
+    /// Record a compute-to-compute barrier unconditionally.
+    ///
+    /// Crate-visible so a validation harness can *assign* a dispatch's placement
+    /// (cold, directly after a barrier) instead of waiting for the hazard rules to
+    /// choose it, which is what turns the profile's cold/warm split into a
+    /// controlled comparison. This is the same command the elision check below
+    /// records, so the command stream is unchanged.
+    pub(crate) fn shader_barrier(&mut self) -> Result<()> {
         let barriers = [vk::MemoryBarrier::default()
             .src_access_mask(vk::AccessFlags::SHADER_WRITE)
             .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)];
@@ -6557,6 +6805,7 @@ impl ComputeBatch {
             .shader_barrier_count
             .checked_add(1)
             .context("Vulkan compute-batch shader-barrier count overflow")?;
+        self.barrier_since_last_dispatch = true;
         Ok(())
     }
 
@@ -6574,6 +6823,7 @@ impl ComputeBatch {
         buffers: &[&GpuBuffer],
         binding_accesses: &[BindingAccess],
     ) -> Result<()> {
+        self.record_overlapping_view_hazards(shader_signature, buffers);
         let overlaps_pending = buffers
             .iter()
             .zip(binding_accesses)
@@ -6629,6 +6879,41 @@ impl ComputeBatch {
             }
         }
         Ok(())
+    }
+
+    /// Record bindings whose byte range overlaps a region touched since the last
+    /// barrier without being identical to it, which the exact-key elision check
+    /// cannot see. Only runs while the dependency trace is enabled.
+    fn record_overlapping_view_hazards(&mut self, shader_signature: u64, buffers: &[&GpuBuffer]) {
+        let Some(trace) = self.dispatch_dependency_trace.as_mut() else {
+            return;
+        };
+        for buffer in buffers {
+            let current = buffer.buffer_region_key();
+            for pending in self.pending_shader_buffers.iter() {
+                if *pending == current {
+                    continue;
+                }
+                trace.distinct_view_pairs_examined += 1;
+                if !view_key_overlaps(current, *pending) {
+                    continue;
+                }
+                let pending_shader = trace
+                    .pending_shader_write_owners
+                    .get(pending)
+                    .or_else(|| trace.pending_shader_read_owners.get(pending))
+                    .copied();
+                *trace
+                    .overlapping_views
+                    .entry(OverlappingViewHazard {
+                        pending: *pending,
+                        current,
+                        pending_shader,
+                        current_shader: shader_signature,
+                    })
+                    .or_default() += 1;
+            }
+        }
     }
 
     fn finish_shader_dispatch(
@@ -6785,6 +7070,7 @@ impl Drop for ComputeBatch {
                 for chunk in profile.chunks.drain(..) {
                     self.inner.device.destroy_query_pool(chunk.pool, None);
                 }
+                self.inner.device.destroy_query_pool(profile.span_pool, None);
             }
         }
         for chunk in self.descriptor_pools.drain(..) {
@@ -6804,14 +7090,19 @@ fn emit_kernel_timestamp_profile_for_inner(
     profile: &KernelTimestampProfile,
 ) -> Result<()> {
     let mut by_shader = HashMap::<u64, KernelTimestampStats>::new();
+    // Every dispatch is counted; only the sampled ones carry a bracket.
+    for (&signature, &dispatches) in &profile.dispatches_by_shader {
+        by_shader.entry(signature).or_default().dispatches = dispatches;
+    }
+    let mut placement = HashMap::<(u64, u64), KernelTimestampPlacement>::new();
     let mut total_ticks = 0u128;
     let mut total_dispatches = 0usize;
     for chunk in &profile.chunks {
-        if chunk.shader_signatures.is_empty() {
+        if chunk.samples.is_empty() {
             continue;
         }
         let query_count = chunk
-            .shader_signatures
+            .samples
             .len()
             .checked_mul(2)
             .context("Vulkan kernel-profile result count overflow")?;
@@ -6827,16 +7118,40 @@ fn emit_kernel_timestamp_profile_for_inner(
                 )
                 .map_err(|err| anyhow!("reading Vulkan kernel-profile timestamps: {err:?}"))?;
         }
-        for (index, &shader_signature) in chunk.shader_signatures.iter().enumerate() {
-            let start = timestamps[index * 2];
-            let end = timestamps[index * 2 + 1];
-            let ticks = timestamp_delta(start, end, profile.timestamp_valid_bits) as u128;
-            let stats = by_shader.entry(shader_signature).or_default();
-            stats.dispatches = stats.dispatches.saturating_add(1);
+        for (index, sample) in chunk.samples.iter().enumerate() {
+            let ticks = timestamp_delta(
+                timestamps[index * 2],
+                timestamps[index * 2 + 1],
+                profile.timestamp_valid_bits,
+            ) as u128;
+            let stats = by_shader.entry(sample.shader).or_default();
+            stats.sampled = stats.sampled.saturating_add(1);
             stats.ticks = stats.ticks.saturating_add(ticks);
-            total_ticks = total_ticks.saturating_add(ticks);
-            total_dispatches = total_dispatches.saturating_add(1);
+            let entry = placement
+                .entry((sample.shader, sample.shape))
+                .or_default();
+            entry.groups = sample.groups;
+            if sample.after_barrier {
+                entry.after_barrier_dispatches = entry.after_barrier_dispatches.saturating_add(1);
+                entry.after_barrier_ticks = entry.after_barrier_ticks.saturating_add(ticks);
+            } else {
+                entry.after_dispatch_dispatches = entry.after_dispatch_dispatches.saturating_add(1);
+                entry.after_dispatch_ticks = entry.after_dispatch_ticks.saturating_add(ticks);
+            }
         }
+    }
+    // A sampled bracket is a mean, not a total: scale each shader's mean by its exact
+    // dispatch count so every number below keeps the meaning it had when every dispatch
+    // was timed. With the default stride of one this is exactly the old sum.
+    for stats in by_shader.values_mut() {
+        if stats.sampled > 0 && stats.dispatches > 0 {
+            stats.ticks = stats
+                .ticks
+                .saturating_mul(stats.dispatches as u128)
+                / stats.sampled as u128;
+        }
+        total_ticks = total_ticks.saturating_add(stats.ticks);
+        total_dispatches = total_dispatches.saturating_add(stats.dispatches);
     }
 
     let total_gpu_ms = total_ticks as f64 * profile.timestamp_period_ns / 1_000_000.0;
@@ -6863,6 +7178,44 @@ fn emit_kernel_timestamp_profile_for_inner(
         total_gpu_ms,
         profile.timestamp_period_ns
     );
+    let mut span_timestamps = [0u64; 2];
+    let span_available = unsafe {
+        inner
+            .device
+            .get_query_pool_results(
+                profile.span_pool,
+                0,
+                &mut span_timestamps,
+                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
+            )
+            .is_ok()
+    };
+    if span_available {
+        let span_ticks = timestamp_delta(
+            span_timestamps[0],
+            span_timestamps[1],
+            profile.timestamp_valid_bits,
+        ) as u128;
+        let unattributed_ticks = unattributed_span_ticks(span_ticks, total_ticks);
+        let span_ms = span_ticks as f64 * profile.timestamp_period_ns / 1_000_000.0;
+        let unattributed_ms =
+            unattributed_ticks as f64 * profile.timestamp_period_ns / 1_000_000.0;
+        let unattributed_pct = if span_ticks == 0 {
+            0.0
+        } else {
+            unattributed_ticks as f64 * 100.0 / span_ticks as f64
+        };
+        eprintln!(
+            "hierarchos_vulkan_kernel_profile_span span_ms={:.6} dispatch_ms={:.6} unattributed_ms={:.6} unattributed_pct={:.3} dispatches={} sampled={} sample_stride={}",
+            span_ms,
+            total_gpu_ms,
+            unattributed_ms,
+            unattributed_pct,
+            total_dispatches,
+            profile.sampled,
+            profile.sample_stride
+        );
+    }
 
     let mut by_category = HashMap::<&'static str, KernelTimestampStats>::new();
     for (&signature, stats) in &by_shader {
@@ -6887,9 +7240,13 @@ fn emit_kernel_timestamp_profile_for_inner(
         );
     }
 
+    // A ranking run raises this so every kernel in the step is reported instead of
+    // only the head of the distribution; the default keeps the diagnostic output
+    // small, and the truncation is announced by the caller's summary line.
+    let top_shaders = kernel_profile_top_shaders();
     let mut shaders = by_shader.into_iter().collect::<Vec<_>>();
     shaders.sort_unstable_by(|left, right| right.1.ticks.cmp(&left.1.ticks));
-    for (signature, stats) in shaders.into_iter().take(KERNEL_PROFILE_TOP_SHADERS) {
+    for (signature, stats) in shaders.into_iter().take(top_shaders) {
         let name = shader_debug_name(signature).unwrap_or("unknown");
         let gpu_ms = stats.ticks as f64 * profile.timestamp_period_ns / 1_000_000.0;
         let pct = if total_ticks == 0 {
@@ -6898,15 +7255,72 @@ fn emit_kernel_timestamp_profile_for_inner(
             stats.ticks as f64 * 100.0 / total_ticks as f64
         };
         eprintln!(
-            "hierarchos_vulkan_kernel_profile_shader shader={} category={} dispatches={} gpu_ms={:.6} pct={:.3}",
+            "hierarchos_vulkan_kernel_profile_shader shader={} category={} dispatches={} gpu_ms={:.6} pct={:.3} samples={}",
             name,
             kernel_profile_category(name),
             stats.dispatches,
             gpu_ms,
-            pct
+            pct,
+            stats.sampled
+        );
+    }
+
+    // Kernels dispatched both immediately after a barrier and back to back with
+    // another dispatch are the only ones whose own execution can be separated from
+    // what they inherit, so only those are reported here.
+    let mut placements = placement
+        .into_iter()
+        .filter(|(_, entry)| {
+            entry.after_barrier_dispatches > 0 && entry.after_dispatch_dispatches > 0
+        })
+        .collect::<Vec<_>>();
+    placements.sort_unstable_by(|left, right| {
+        let left_total = left.1.after_barrier_ticks + left.1.after_dispatch_ticks;
+        let right_total = right.1.after_barrier_ticks + right.1.after_dispatch_ticks;
+        right_total.cmp(&left_total)
+    });
+    for ((signature, _shape), entry) in placements.into_iter().take(top_shaders) {
+        let name = shader_debug_name(signature).unwrap_or("unknown");
+        let microseconds = |ticks: u128| ticks as f64 * profile.timestamp_period_ns / 1000.0;
+        // Both populations share this line's key, so they share a grid, push constants
+        // and binding count: the comparison is of placement, not of workload.
+        eprintln!(
+            "hierarchos_vulkan_kernel_profile_placement shader={} category={} grid={}x{}x{} after_barrier_dispatches={} after_barrier_us_each={:.3} after_dispatch_dispatches={} after_dispatch_us_each={:.3}",
+            name,
+            kernel_profile_category(name),
+            entry.groups[0],
+            entry.groups[1],
+            entry.groups[2],
+            entry.after_barrier_dispatches,
+            microseconds(entry.after_barrier_ticks) / entry.after_barrier_dispatches as f64,
+            entry.after_dispatch_dispatches,
+            microseconds(entry.after_dispatch_ticks) / entry.after_dispatch_dispatches as f64
         );
     }
     Ok(())
+}
+
+/// The GPU time inside a submission's span that no dispatch bracket covers:
+/// barrier flushes, launch latency, and any genuine idle between dispatches.
+/// Saturating because a wrapped or truncated bracket sum must report zero
+/// unattributed time rather than a bogus underflow.
+/// How many shaders a submission's profile prints, and how many placement lines.
+///
+/// The default keeps a diagnostic run's stderr short. A re-ranking run sets the
+/// environment variable so that kernels outside the top of the distribution still
+/// appear, because a priority list built from a truncated table silently omits the
+/// long tail of cheap kernels — which is exactly the tail whose dispatch *count*
+/// decides whether it is worth batching.
+fn kernel_profile_top_shaders() -> usize {
+    std::env::var(KERNEL_PROFILE_TOP_SHADERS_ENV)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|&count| count > 0)
+        .unwrap_or(KERNEL_PROFILE_TOP_SHADERS)
+}
+
+fn unattributed_span_ticks(span_ticks: u128, dispatch_ticks: u128) -> u128 {
+    span_ticks.saturating_sub(dispatch_ticks)
 }
 
 fn timestamp_delta(start: u64, end: u64, valid_bits: u32) -> u64 {
@@ -6929,7 +7343,7 @@ fn kernel_profile_category(shader_name: &str) -> &'static str {
         "mixed-precision.mirror-unpack"
     } else if matches!(
         shader_name,
-        "gradient_accumulate" | "gradient_accumulate4" | "gradient_scale"
+        "gradient_accumulate" | "gradient_accumulate4" | "gradient_accumulate8" | "gradient_scale"
     ) {
         "optimizer.gradient-bookkeeping"
     } else if shader_name.starts_with("cross_entropy_linear_") {
@@ -6987,6 +7401,7 @@ pub(crate) struct ComputeKernel {
     shader_signature: u64,
     binding_accesses: Vec<BindingAccess>,
     pipeline: vk::Pipeline,
+    _shared_pipeline: Arc<SharedComputePipeline>,
     binding_count: usize,
     push_constant_size: u32,
 }
@@ -7024,10 +7439,11 @@ impl ComputeKernel {
         binding_count: usize,
         push_constant_size: u32,
     ) -> Result<Self> {
+        let words = read_spv(&mut Cursor::new(spirv)).context("decoding embedded SPIR-V")?;
         Self::new_with_access(
             device,
             spirv,
-            &vec![BindingAccess::MayWrite; binding_count],
+            &spirv_access::binding_accesses(&words, binding_count),
             push_constant_size,
         )
     }
@@ -7057,6 +7473,38 @@ impl ComputeKernel {
             descriptor_layout_signature,
             pipeline_layout_signature,
         )?;
+
+        let pipeline_signature = ComputePipelineSignature {
+            shader: shader_signature,
+            layout: pipeline_layout_signature,
+        };
+        // Keep lookup and creation under one lock so concurrent graph builders
+        // cannot compile the same pipeline twice. Subgroup requirements are
+        // fixed by DeviceInner, and the interner is local to that device.
+        let mut interner = device
+            .inner
+            .layout_interner
+            .lock()
+            .map_err(|_| anyhow!("Vulkan layout interner lock was poisoned"))?;
+        if let Some(shared_pipeline) = interner
+            .compute_pipelines
+            .get(&pipeline_signature)
+            .and_then(Weak::upgrade)
+        {
+            return Ok(Self {
+                inner: Arc::clone(&device.inner),
+                descriptor_set_layout,
+                pipeline_layout,
+                descriptor_layout_signature,
+                pipeline_layout_signature,
+                shader_signature,
+                binding_accesses: binding_accesses.to_vec(),
+                pipeline: shared_pipeline.pipeline,
+                _shared_pipeline: shared_pipeline,
+                binding_count,
+                push_constant_size,
+            });
+        }
 
         let words = read_spv(&mut Cursor::new(spirv)).context("decoding embedded SPIR-V")?;
         let shader_info = vk::ShaderModuleCreateInfo::default().code(&words);
@@ -7094,8 +7542,22 @@ impl ComputeKernel {
         };
         let pipeline = match pipeline_result {
             Ok(pipelines) => pipelines[0],
-            Err((_, err)) => return Err(anyhow!("creating Vulkan compute pipeline: {err:?}")),
+            Err((pipelines, err)) => {
+                for pipeline in pipelines {
+                    if pipeline != vk::Pipeline::null() {
+                        unsafe { device.inner.device.destroy_pipeline(pipeline, None) };
+                    }
+                }
+                return Err(anyhow!("creating Vulkan compute pipeline: {err:?}"));
+            }
         };
+        let shared_pipeline = Arc::new(SharedComputePipeline {
+            inner: Arc::clone(&device.inner),
+            pipeline,
+        });
+        interner
+            .compute_pipelines
+            .insert(pipeline_signature, Arc::downgrade(&shared_pipeline));
 
         Ok(Self {
             inner: Arc::clone(&device.inner),
@@ -7106,6 +7568,7 @@ impl ComputeKernel {
             shader_signature,
             binding_accesses: binding_accesses.to_vec(),
             pipeline,
+            _shared_pipeline: shared_pipeline,
             binding_count,
             push_constant_size,
         })
@@ -7226,7 +7689,18 @@ impl ComputeKernel {
                 .context("Vulkan compute-batch push-constant write count overflow")?;
         }
 
-        batch.record_kernel_timestamp_begin(self.shader_signature)?;
+        let dispatch_shape = if batch.kernel_timestamp_profile.is_some() {
+            dispatch_shape_signature(groups, push_constants, self.binding_count)
+        } else {
+            0
+        };
+        batch.record_kernel_timestamp_begin(
+            self.shader_signature,
+            dispatch_shape,
+            groups,
+            batch.barrier_since_last_dispatch,
+        )?;
+        batch.barrier_since_last_dispatch = false;
         self.inner.with_command_pool_host_access(|| unsafe {
             self.inner
                 .device
@@ -7246,6 +7720,19 @@ impl ComputeKernel {
     }
 }
 
+/// The shape a dispatch ran at: its grid, its push constants, and how many buffers it
+/// bound. Two brackets are comparable only when their shapes match, which is what makes
+/// a sampled cost comparison a comparison of placements rather than of workloads.
+fn dispatch_shape_signature(groups: [u32; 3], push_constants: &[u8], binding_count: usize) -> u64 {
+    let mut bytes = Vec::with_capacity(20 + push_constants.len());
+    for group in groups {
+        bytes.extend_from_slice(&group.to_le_bytes());
+    }
+    bytes.extend_from_slice(&(binding_count as u64).to_le_bytes());
+    bytes.extend_from_slice(push_constants);
+    fnv1a64(&bytes)
+}
+
 fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
     for &byte in bytes {
@@ -7255,19 +7742,12 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-impl Drop for ComputeKernel {
-    fn drop(&mut self) {
-        unsafe {
-            self.inner.device.destroy_pipeline(self.pipeline, None);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         insert_free_range, intern_kernel_layouts, kernel_profile_category, take_aligned_range,
-        timestamp_delta, watchdog_submission_slicing_enabled_for, ComputeBatch, ComputeKernel,
+        timestamp_delta, view_key_overlaps, watchdog_submission_slicing_enabled_for,
+        BufferRegionKey, ComputeBatch, ComputeKernel,
         DescriptorLayoutSignature, GpuBuffer, MemoryRange, PipelineLayoutSignature,
         SubmissionCompletion, UploadArenaStorage, VulkanDevice, VulkanDeviceGroupInfo,
         VulkanExternalBufferCapabilities, VulkanExternalSemaphoreCapabilities,
@@ -7275,6 +7755,129 @@ mod tests {
         AMD_PCI_VENDOR_ID,
     };
     use anyhow::{anyhow, Context, Result};
+
+    #[test]
+    fn compute_pipelines_share_driver_objects_and_preserve_kernel_access() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        let shader = include_bytes!("../shaders/linear_forward.spv");
+        let first = ComputeKernel::new_with_access(
+            &device,
+            shader,
+            &[super::BindingAccess::MayWrite; 3],
+            16,
+        )?;
+        let second = ComputeKernel::new_with_access(
+            &device,
+            shader,
+            &[
+                super::BindingAccess::ReadOnly,
+                super::BindingAccess::ReadOnly,
+                super::BindingAccess::WriteOnly,
+            ],
+            16,
+        )?;
+        assert!(std::sync::Arc::ptr_eq(
+            &first._shared_pipeline,
+            &second._shared_pipeline
+        ));
+        assert_eq!(first.pipeline, second.pipeline);
+        assert_eq!(first.binding_accesses[0], super::BindingAccess::MayWrite);
+        assert_eq!(second.binding_accesses[0], super::BindingAccess::ReadOnly);
+
+        let lifetime = std::sync::Arc::downgrade(&first._shared_pipeline);
+        drop(first);
+        let input = GpuBuffer::from_f32(&device, &[1.0, 2.0, 3.0, 4.0])?;
+        let weight = GpuBuffer::from_f32(&device, &[2.0, 3.0, 4.0, 5.0])?;
+        let output = GpuBuffer::zeros_f32(&device, 1)?;
+        let mut commands = ComputeBatch::new(&device)?;
+        second.record_dispatch(
+            &mut commands,
+            &[&input, &weight, &output],
+            bytemuck::cast_slice(&[1u32, 4, 1, 0]),
+            [1, 1, 1],
+        )?;
+        commands.submit()?;
+        assert_eq!(output.read_f32(1)?, vec![40.0]);
+        drop(second);
+        assert!(
+            lifetime.upgrade().is_none(),
+            "unused pipelines must release driver memory"
+        );
+
+        // A dead weak entry must be replaceable when another graph is built.
+        let replacement = ComputeKernel::new(&device, shader, 3, 16)?;
+        assert!(lifetime.upgrade().is_none());
+        assert!(std::sync::Arc::strong_count(&replacement._shared_pipeline) == 1);
+        Ok(())
+    }
+
+    #[test]
+    fn compute_pipeline_interning_distinguishes_shader_and_layout() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        let shader = include_bytes!("../shaders/linear_forward.spv");
+        let first = ComputeKernel::new(&device, shader, 3, 16)?;
+        let different_layout = ComputeKernel::new(&device, shader, 3, 20)?;
+        let different_shader =
+            ComputeKernel::new(&device, include_bytes!("../shaders/vector_add.spv"), 3, 16)?;
+        assert_ne!(first.pipeline, different_layout.pipeline);
+        assert_ne!(first.pipeline, different_shader.pipeline);
+        Ok(())
+    }
+
+    #[test]
+    fn overlapping_view_detection_distinguishes_overlap_from_distinct_ranges() {
+        let key = |buffer: u64, offset: u64, size: u64| BufferRegionKey { buffer, offset, size };
+        // Same buffer, ranges that share bytes: the case the exact-key check misses.
+        assert!(view_key_overlaps(key(1, 0, 4096), key(1, 2048, 4096)));
+        assert!(view_key_overlaps(key(1, 2048, 4096), key(1, 0, 4096)));
+        assert!(view_key_overlaps(key(1, 0, 4096), key(1, 4095, 4096)));
+        // Identical views are the exact-equality case, not this one.
+        assert!(!view_key_overlaps(key(1, 0, 4096), key(1, 0, 4096)));
+        // Disjoint ranges of the same buffer do not overlap, adjacent or not.
+        assert!(!view_key_overlaps(key(1, 0, 1024), key(1, 1024, 1024)));
+        assert!(!view_key_overlaps(key(1, 0, 1024), key(1, 2048, 1024)));
+        // The same range in two different buffers is not a hazard.
+        assert!(!view_key_overlaps(key(1, 0, 4096), key(2, 0, 4096)));
+    }
+
+    #[test]
+    fn reflected_access_elides_shared_reads_and_orders_dependent_writes() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        let kernel = ComputeKernel::new(
+            &device,
+            include_bytes!("../shaders/linear_forward.spv"),
+            3,
+            16,
+        )?;
+        let input = GpuBuffer::from_f32(&device, &[1.0, 2.0, 3.0, 4.0])?;
+        let weight = GpuBuffer::from_f32(&device, &[2.0, 3.0, 4.0, 5.0])?;
+        let scale = GpuBuffer::from_f32(&device, &[2.0])?;
+        let first = GpuBuffer::zeros_f32(&device, 1)?;
+        let independent = GpuBuffer::zeros_f32(&device, 1)?;
+        let dependent = GpuBuffer::zeros_f32(&device, 1)?;
+        let mut commands = ComputeBatch::new(&device)?;
+        commands.watchdog_submission_slicing = false;
+        for output in [&first, &independent] {
+            kernel.record_dispatch(
+                &mut commands,
+                &[&input, &weight, output],
+                bytemuck::cast_slice(&[1u32, 4, 1, 0]),
+                [1, 1, 1],
+            )?;
+        }
+        assert_eq!(commands.shader_barrier_count(), 0);
+        kernel.record_dispatch(
+            &mut commands,
+            &[&first, &scale, &dependent],
+            bytemuck::cast_slice(&[1u32, 1, 1, 0]),
+            [1, 1, 1],
+        )?;
+        assert_eq!(commands.shader_barrier_count(), 1);
+        commands.submit()?;
+        assert_eq!(independent.read_f32(1)?, vec![40.0]);
+        assert_eq!(dependent.read_f32(1)?, vec![80.0]);
+        Ok(())
+    }
 
     fn external_memory_test_device(
         index: usize,

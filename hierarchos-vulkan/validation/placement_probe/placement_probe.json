@@ -1,0 +1,3155 @@
+{
+  "device": "AMD Radeon Graphics",
+  "shapes": [
+    {
+      "kernel": "linear_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 4.3825,
+          "gpu_us_per_dispatch_min": 4.3675,
+          "gpu_us_per_dispatch_max": 4.460000000000001,
+          "wall_us_per_dispatch_median": 12.356250000000001,
+          "wall_us_per_dispatch_min": 7.559375,
+          "wall_us_per_dispatch_max": 12.865624999999998
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 15.9625,
+          "gpu_us_per_dispatch_min": 15.90625,
+          "gpu_us_per_dispatch_max": 15.9825,
+          "wall_us_per_dispatch_median": 20.999999999999996,
+          "wall_us_per_dispatch_min": 20.265625,
+          "wall_us_per_dispatch_max": 25.9375
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.58,
+      "inherited_wall_us_per_dispatch": 8.643749999999995,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.36875,
+          "wall_us_per_dispatch": 7.559375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9625,
+          "wall_us_per_dispatch": 20.340625000000003,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.90625,
+          "wall_us_per_dispatch": 20.959374999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.405,
+          "wall_us_per_dispatch": 8.168750000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.97125,
+          "wall_us_per_dispatch": 21.228125000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.460000000000001,
+          "wall_us_per_dispatch": 12.356250000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3675,
+          "wall_us_per_dispatch": 8.231250000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9825,
+          "wall_us_per_dispatch": 25.684375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3875,
+          "wall_us_per_dispatch": 7.965625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9275,
+          "wall_us_per_dispatch": 20.265625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9775,
+          "wall_us_per_dispatch": 20.309375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3675,
+          "wall_us_per_dispatch": 12.775,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9125,
+          "wall_us_per_dispatch": 25.9375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3825,
+          "wall_us_per_dispatch": 12.865624999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.37625,
+          "wall_us_per_dispatch": 12.378124999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9375,
+          "wall_us_per_dispatch": 20.999999999999996,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 4.4,
+          "gpu_us_per_dispatch_min": 4.37875,
+          "gpu_us_per_dispatch_max": 4.4125,
+          "wall_us_per_dispatch_median": 7.909375000000002,
+          "wall_us_per_dispatch_min": 7.7906249999999995,
+          "wall_us_per_dispatch_max": 12.540625
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 16.25875,
+          "gpu_us_per_dispatch_min": 16.236250000000002,
+          "gpu_us_per_dispatch_max": 16.358749999999997,
+          "wall_us_per_dispatch_median": 20.85625,
+          "wall_us_per_dispatch_min": 20.628125,
+          "wall_us_per_dispatch_max": 26.125000000000004
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.858749999999999,
+      "inherited_wall_us_per_dispatch": 12.946874999999999,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.37875,
+          "wall_us_per_dispatch": 8.259374999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.330000000000002,
+          "wall_us_per_dispatch": 20.934375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.25875,
+          "wall_us_per_dispatch": 20.70625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.385,
+          "wall_us_per_dispatch": 7.7906249999999995,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.358749999999997,
+          "wall_us_per_dispatch": 20.628125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.39375,
+          "wall_us_per_dispatch": 7.9,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.4,
+          "wall_us_per_dispatch": 7.871875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.2575,
+          "wall_us_per_dispatch": 20.759375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.4125,
+          "wall_us_per_dispatch": 7.8375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.236250000000002,
+          "wall_us_per_dispatch": 20.825,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.25875,
+          "wall_us_per_dispatch": 20.85625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.41125,
+          "wall_us_per_dispatch": 7.909375000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.237499999999997,
+          "wall_us_per_dispatch": 21.625000000000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.40625,
+          "wall_us_per_dispatch": 12.175,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.39875,
+          "wall_us_per_dispatch": 12.540625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.3125,
+          "wall_us_per_dispatch": 26.125000000000004,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "512x128x16",
+      "grid": "1x32x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 32768,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 8.62375,
+          "gpu_us_per_dispatch_min": 8.60875,
+          "gpu_us_per_dispatch_max": 8.645,
+          "wall_us_per_dispatch_median": 12.325,
+          "wall_us_per_dispatch_min": 12.231250000000001,
+          "wall_us_per_dispatch_max": 12.7625
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 19.44875,
+          "gpu_us_per_dispatch_min": 19.384999999999998,
+          "gpu_us_per_dispatch_max": 19.778750000000002,
+          "wall_us_per_dispatch_median": 23.990624999999998,
+          "wall_us_per_dispatch_min": 23.93125,
+          "wall_us_per_dispatch_max": 29.5375
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 10.825000000000001,
+      "inherited_wall_us_per_dispatch": 11.665624999999999,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.6275,
+          "wall_us_per_dispatch": 12.231250000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.44875,
+          "wall_us_per_dispatch": 23.934375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.55375,
+          "wall_us_per_dispatch": 28.621875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.625,
+          "wall_us_per_dispatch": 12.265625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.778750000000002,
+          "wall_us_per_dispatch": 24.115624999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.645,
+          "wall_us_per_dispatch": 12.315625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.60875,
+          "wall_us_per_dispatch": 12.7625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.415000000000003,
+          "wall_us_per_dispatch": 23.962500000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.62,
+          "wall_us_per_dispatch": 12.346875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.490000000000002,
+          "wall_us_per_dispatch": 23.93125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.41875,
+          "wall_us_per_dispatch": 29.5375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.62375,
+          "wall_us_per_dispatch": 12.4375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.445,
+          "wall_us_per_dispatch": 23.93125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.62,
+          "wall_us_per_dispatch": 12.253125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.6175,
+          "wall_us_per_dispatch": 12.325,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.384999999999998,
+          "wall_us_per_dispatch": 23.990624999999998,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_forward",
+      "shape": "512x128x128",
+      "grid": "8x32x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 66.40875,
+          "gpu_us_per_dispatch_min": 58.113749999999996,
+          "gpu_us_per_dispatch_max": 66.50250000000001,
+          "wall_us_per_dispatch_median": 88.234375,
+          "wall_us_per_dispatch_min": 81.0375,
+          "wall_us_per_dispatch_max": 90.603125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 74.83874999999999,
+          "gpu_us_per_dispatch_min": 65.07375,
+          "gpu_us_per_dispatch_max": 75.03375,
+          "wall_us_per_dispatch_median": 99.83125000000001,
+          "wall_us_per_dispatch_min": 84.66875,
+          "wall_us_per_dispatch_max": 102.35625
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 8.429999999999993,
+      "inherited_wall_us_per_dispatch": 11.596875000000011,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.13125000000001,
+          "wall_us_per_dispatch": 88.621875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.9325,
+          "wall_us_per_dispatch": 99.62499999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 75.03375,
+          "wall_us_per_dispatch": 100.38437499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.50250000000001,
+          "wall_us_per_dispatch": 88.153125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.83874999999999,
+          "wall_us_per_dispatch": 100.696875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.40875,
+          "wall_us_per_dispatch": 90.603125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.44500000000001,
+          "wall_us_per_dispatch": 88.80624999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.94874999999999,
+          "wall_us_per_dispatch": 99.83125000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.41375,
+          "wall_us_per_dispatch": 88.234375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.4025,
+          "wall_us_per_dispatch": 102.35625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 71.8325,
+          "wall_us_per_dispatch": 95.75,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 61.587500000000006,
+          "wall_us_per_dispatch": 88.03750000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 67.7025,
+          "wall_us_per_dispatch": 92.60625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 58.7025,
+          "wall_us_per_dispatch": 81.0375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 58.113749999999996,
+          "wall_us_per_dispatch": 86.03750000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 65.07375,
+          "wall_us_per_dispatch": 84.66875,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x512x512",
+      "grid": "32x2x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 65536,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 50.44125,
+          "gpu_us_per_dispatch_min": 48.232499999999995,
+          "gpu_us_per_dispatch_max": 61.90625,
+          "wall_us_per_dispatch_median": 72.18125,
+          "wall_us_per_dispatch_min": 64.43124999999999,
+          "wall_us_per_dispatch_max": 78.575
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 75.5475,
+          "gpu_us_per_dispatch_min": 72.72000000000001,
+          "gpu_us_per_dispatch_max": 87.3525,
+          "wall_us_per_dispatch_median": 98.65625,
+          "wall_us_per_dispatch_min": 88.73125000000002,
+          "wall_us_per_dispatch_max": 103.74062500000001
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 25.106250000000003,
+      "inherited_wall_us_per_dispatch": 26.474999999999994,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 61.90625,
+          "wall_us_per_dispatch": 72.18125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 87.3525,
+          "wall_us_per_dispatch": 103.74062500000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 83.12875,
+          "wall_us_per_dispatch": 95.3,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 53.6725,
+          "wall_us_per_dispatch": 78.575,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 77.80499999999999,
+          "wall_us_per_dispatch": 99.734375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 50.74125,
+          "wall_us_per_dispatch": 67.865625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 50.44125,
+          "wall_us_per_dispatch": 76.88750000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 75.5475,
+          "wall_us_per_dispatch": 98.65625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 49.6875,
+          "wall_us_per_dispatch": 70.70625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 75.06875000000001,
+          "wall_us_per_dispatch": 98.046875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 73.975,
+          "wall_us_per_dispatch": 91.015625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 48.71375,
+          "wall_us_per_dispatch": 76.059375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.1275,
+          "wall_us_per_dispatch": 88.73125000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 48.232499999999995,
+          "wall_us_per_dispatch": 64.43124999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 48.25,
+          "wall_us_per_dispatch": 69.403125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 72.72000000000001,
+          "wall_us_per_dispatch": 100.503125,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "vector_add",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.5675,
+          "gpu_us_per_dispatch_min": 3.4387499999999998,
+          "gpu_us_per_dispatch_max": 3.6925,
+          "wall_us_per_dispatch_median": 6.8656250000000005,
+          "wall_us_per_dispatch_min": 6.615625,
+          "wall_us_per_dispatch_max": 11.378125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 6.25625,
+          "gpu_us_per_dispatch_min": 6.22375,
+          "gpu_us_per_dispatch_max": 6.3875,
+          "wall_us_per_dispatch_median": 13.28125,
+          "wall_us_per_dispatch_min": 12.1625,
+          "wall_us_per_dispatch_max": 18.450000000000003
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 2.6887499999999998,
+      "inherited_wall_us_per_dispatch": 6.4156249999999995,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.53875,
+          "wall_us_per_dispatch": 6.8656250000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.22375,
+          "wall_us_per_dispatch": 16.965625000000003,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.25625,
+          "wall_us_per_dispatch": 12.1625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.5612500000000002,
+          "wall_us_per_dispatch": 6.615625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.25,
+          "wall_us_per_dispatch": 13.571874999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.5675,
+          "wall_us_per_dispatch": 6.7281249999999995,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.52125,
+          "wall_us_per_dispatch": 6.8031250000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.2725,
+          "wall_us_per_dispatch": 12.35,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.4387499999999998,
+          "wall_us_per_dispatch": 6.7,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.24375,
+          "wall_us_per_dispatch": 12.821875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.25625,
+          "wall_us_per_dispatch": 13.11875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.6925,
+          "wall_us_per_dispatch": 10.625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.3875,
+          "wall_us_per_dispatch": 18.450000000000003,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.655,
+          "wall_us_per_dispatch": 7.315625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.675,
+          "wall_us_per_dispatch": 11.378125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.3175,
+          "wall_us_per_dispatch": 13.28125,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "finite_clamp_forward",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 32,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 32,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.23,
+          "gpu_us_per_dispatch_min": 3.1975,
+          "gpu_us_per_dispatch_max": 3.31125,
+          "wall_us_per_dispatch_median": 7.21875,
+          "wall_us_per_dispatch_min": 6.93125,
+          "wall_us_per_dispatch_max": 11.96875
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.995,
+          "gpu_us_per_dispatch_min": 3.88875,
+          "gpu_us_per_dispatch_max": 4.42125,
+          "wall_us_per_dispatch_median": 11.071875,
+          "wall_us_per_dispatch_min": 10.740625,
+          "wall_us_per_dispatch_max": 15.51875
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 0.7650000000000001,
+      "inherited_wall_us_per_dispatch": 3.8531250000000004,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.20375,
+          "wall_us_per_dispatch": 6.93125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.88875,
+          "wall_us_per_dispatch": 11.053124999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 4.42125,
+          "wall_us_per_dispatch": 15.359375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.26625,
+          "wall_us_per_dispatch": 7.040625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 4.00125,
+          "wall_us_per_dispatch": 10.88125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.23,
+          "wall_us_per_dispatch": 7.184375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.21625,
+          "wall_us_per_dispatch": 7.596875000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.9587499999999998,
+          "wall_us_per_dispatch": 11.071875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.2675,
+          "wall_us_per_dispatch": 7.13125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 4.03375,
+          "wall_us_per_dispatch": 15.51875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.9899999999999998,
+          "wall_us_per_dispatch": 10.815625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.1975,
+          "wall_us_per_dispatch": 7.21875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.95375,
+          "wall_us_per_dispatch": 11.296875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.20375,
+          "wall_us_per_dispatch": 7.9312499999999995,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.31125,
+          "wall_us_per_dispatch": 11.96875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.995,
+          "wall_us_per_dispatch": 10.740625,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 4.32875,
+          "gpu_us_per_dispatch_min": 4.315,
+          "gpu_us_per_dispatch_max": 4.364375,
+          "wall_us_per_dispatch_median": 6.496875,
+          "wall_us_per_dispatch_min": 6.440625,
+          "wall_us_per_dispatch_max": 7.739062499999999
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 15.918125000000002,
+          "gpu_us_per_dispatch_min": 15.869375000000002,
+          "gpu_us_per_dispatch_max": 16.003125,
+          "wall_us_per_dispatch_median": 20.207812500000003,
+          "wall_us_per_dispatch_min": 19.74375,
+          "wall_us_per_dispatch_max": 22.0125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.589375,
+      "inherited_wall_us_per_dispatch": 13.710937500000004,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.328125,
+          "wall_us_per_dispatch": 6.496875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.910625000000001,
+          "wall_us_per_dispatch": 19.74375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9225,
+          "wall_us_per_dispatch": 19.846875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.32625,
+          "wall_us_per_dispatch": 6.4515625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.869375000000002,
+          "wall_us_per_dispatch": 20.207812500000003,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.335625,
+          "wall_us_per_dispatch": 6.475,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.315,
+          "wall_us_per_dispatch": 6.496875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.91375,
+          "wall_us_per_dispatch": 19.79375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.32875,
+          "wall_us_per_dispatch": 6.5796874999999995,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.881875,
+          "wall_us_per_dispatch": 21.046875000000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.003125,
+          "wall_us_per_dispatch": 22.0125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.364375,
+          "wall_us_per_dispatch": 7.739062499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.918125000000002,
+          "wall_us_per_dispatch": 20.109375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.33375,
+          "wall_us_per_dispatch": 6.440625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.31875,
+          "wall_us_per_dispatch": 6.7734375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.921874999999998,
+          "wall_us_per_dispatch": 20.421875,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 4.345,
+          "gpu_us_per_dispatch_min": 4.3175,
+          "gpu_us_per_dispatch_max": 4.35625,
+          "wall_us_per_dispatch_median": 6.5984375,
+          "wall_us_per_dispatch_min": 6.4375,
+          "wall_us_per_dispatch_max": 7.13125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 16.329375,
+          "gpu_us_per_dispatch_min": 16.235625,
+          "gpu_us_per_dispatch_max": 16.343125,
+          "wall_us_per_dispatch_median": 20.91875,
+          "wall_us_per_dispatch_min": 20.2,
+          "wall_us_per_dispatch_max": 21.078125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.984375,
+      "inherited_wall_us_per_dispatch": 14.3203125,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.349375,
+          "wall_us_per_dispatch": 6.503124999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.278750000000002,
+          "wall_us_per_dispatch": 20.2,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.333750000000002,
+          "wall_us_per_dispatch": 20.509375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.34375,
+          "wall_us_per_dispatch": 6.5046875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.248124999999998,
+          "wall_us_per_dispatch": 20.5515625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.35625,
+          "wall_us_per_dispatch": 7.13125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.354375,
+          "wall_us_per_dispatch": 6.4375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.329375,
+          "wall_us_per_dispatch": 20.953125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3175,
+          "wall_us_per_dispatch": 6.753125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.244999999999997,
+          "wall_us_per_dispatch": 20.91875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.343125,
+          "wall_us_per_dispatch": 21.078125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.34125,
+          "wall_us_per_dispatch": 6.6078125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.3325,
+          "wall_us_per_dispatch": 20.259375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.33875,
+          "wall_us_per_dispatch": 6.5984375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.345,
+          "wall_us_per_dispatch": 6.4734375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.235625,
+          "wall_us_per_dispatch": 21.0265625,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "512x128x16",
+      "grid": "1x32x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 32768,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 8.6125,
+          "gpu_us_per_dispatch_min": 8.5775,
+          "gpu_us_per_dispatch_max": 8.6575,
+          "wall_us_per_dispatch_median": 12.040624999999999,
+          "wall_us_per_dispatch_min": 10.8671875,
+          "wall_us_per_dispatch_max": 19.3515625
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 19.426875,
+          "gpu_us_per_dispatch_min": 19.218125,
+          "gpu_us_per_dispatch_max": 19.653750000000002,
+          "wall_us_per_dispatch_median": 24.3796875,
+          "wall_us_per_dispatch_min": 23.096875,
+          "wall_us_per_dispatch_max": 31.903124999999996
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 10.814374999999998,
+      "inherited_wall_us_per_dispatch": 12.3390625,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.591875,
+          "wall_us_per_dispatch": 10.8671875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.426875,
+          "wall_us_per_dispatch": 23.096875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.395625,
+          "wall_us_per_dispatch": 24.3796875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.594375,
+          "wall_us_per_dispatch": 10.921875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.497500000000002,
+          "wall_us_per_dispatch": 24.0578125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.5775,
+          "wall_us_per_dispatch": 11.615625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.595625,
+          "wall_us_per_dispatch": 12.040624999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.446250000000003,
+          "wall_us_per_dispatch": 23.5265625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.6125,
+          "wall_us_per_dispatch": 11.1203125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.218125,
+          "wall_us_per_dispatch": 24.3328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.385625,
+          "wall_us_per_dispatch": 25.3328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.64125,
+          "wall_us_per_dispatch": 12.5515625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.653750000000002,
+          "wall_us_per_dispatch": 31.903124999999996,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.644375,
+          "wall_us_per_dispatch": 19.3515625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.6575,
+          "wall_us_per_dispatch": 19.265624999999996,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.338749999999997,
+          "wall_us_per_dispatch": 31.568749999999998,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_forward",
+      "shape": "512x128x128",
+      "grid": "8x32x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 44.554375,
+          "gpu_us_per_dispatch_min": 35.8375,
+          "gpu_us_per_dispatch_max": 66.23562500000001,
+          "wall_us_per_dispatch_median": 55.143750000000004,
+          "wall_us_per_dispatch_min": 45.067187499999996,
+          "wall_us_per_dispatch_max": 71.3
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 49.1275,
+          "gpu_us_per_dispatch_min": 40.57875,
+          "gpu_us_per_dispatch_max": 74.969375,
+          "wall_us_per_dispatch_median": 61.9484375,
+          "wall_us_per_dispatch_min": 53.61875,
+          "wall_us_per_dispatch_max": 82.63593750000001
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 4.573124999999997,
+      "inherited_wall_us_per_dispatch": 6.804687499999993,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.23562500000001,
+          "wall_us_per_dispatch": 71.3,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 74.969375,
+          "wall_us_per_dispatch": 82.63593750000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 68.24624999999999,
+          "wall_us_per_dispatch": 74.4875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 52.985625,
+          "wall_us_per_dispatch": 63.259375000000006,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 55.311875,
+          "wall_us_per_dispatch": 67.6734375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 46.13375,
+          "wall_us_per_dispatch": 56.2625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 44.554375,
+          "wall_us_per_dispatch": 55.143750000000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 49.1275,
+          "wall_us_per_dispatch": 61.9484375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 41.68,
+          "wall_us_per_dispatch": 52.365625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 46.510000000000005,
+          "wall_us_per_dispatch": 59.5109375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 44.888749999999995,
+          "wall_us_per_dispatch": 56.746875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 38.0225,
+          "wall_us_per_dispatch": 48.140625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 42.305625,
+          "wall_us_per_dispatch": 55.6796875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 36.10375,
+          "wall_us_per_dispatch": 45.067187499999996,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 35.8375,
+          "wall_us_per_dispatch": 46.690625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 40.57875,
+          "wall_us_per_dispatch": 53.61875,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x512x512",
+      "grid": "32x2x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 65536,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 29.947499999999998,
+          "gpu_us_per_dispatch_min": 24.46375,
+          "gpu_us_per_dispatch_max": 38.057500000000005,
+          "wall_us_per_dispatch_median": 40.009375,
+          "wall_us_per_dispatch_min": 27.5796875,
+          "wall_us_per_dispatch_max": 43.2796875
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 56.220625000000005,
+          "gpu_us_per_dispatch_min": 52.281875,
+          "gpu_us_per_dispatch_max": 61.384375,
+          "wall_us_per_dispatch_median": 64.00468749999999,
+          "wall_us_per_dispatch_min": 57.4109375,
+          "wall_us_per_dispatch_max": 71.9828125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 26.273125000000007,
+      "inherited_wall_us_per_dispatch": 23.99531249999999,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 38.057500000000005,
+          "wall_us_per_dispatch": 43.2796875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 61.384375,
+          "wall_us_per_dispatch": 66.6984375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 59.0475,
+          "wall_us_per_dispatch": 64.00468749999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 32.950624999999995,
+          "wall_us_per_dispatch": 42.487500000000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 56.683125000000004,
+          "wall_us_per_dispatch": 64.628125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 30.621875,
+          "wall_us_per_dispatch": 40.74375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 29.947499999999998,
+          "wall_us_per_dispatch": 40.009375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 55.51375,
+          "wall_us_per_dispatch": 71.9828125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 29.2325,
+          "wall_us_per_dispatch": 39.265625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 56.220625000000005,
+          "wall_us_per_dispatch": 60.3953125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 54.54375,
+          "wall_us_per_dispatch": 57.4109375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 26.59375,
+          "wall_us_per_dispatch": 29.296875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 53.761875,
+          "wall_us_per_dispatch": 59.131249999999994,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 24.865624999999998,
+          "wall_us_per_dispatch": 27.5796875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 24.46375,
+          "wall_us_per_dispatch": 27.7,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 52.281875,
+          "wall_us_per_dispatch": 58.084375,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "vector_add",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.754375,
+          "gpu_us_per_dispatch_min": 3.651875,
+          "gpu_us_per_dispatch_max": 3.789375,
+          "wall_us_per_dispatch_median": 5.646875,
+          "wall_us_per_dispatch_min": 5.5,
+          "wall_us_per_dispatch_max": 6.550000000000001
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 6.03125,
+          "gpu_us_per_dispatch_min": 5.984375,
+          "gpu_us_per_dispatch_max": 6.225625,
+          "wall_us_per_dispatch_median": 11.250000000000002,
+          "wall_us_per_dispatch_min": 10.676562500000001,
+          "wall_us_per_dispatch_max": 18.421874999999996
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 2.276875,
+      "inherited_wall_us_per_dispatch": 5.603125000000002,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.789375,
+          "wall_us_per_dispatch": 5.5,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 5.984375,
+          "wall_us_per_dispatch": 11.217187500000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.225625,
+          "wall_us_per_dispatch": 11.403125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.764375,
+          "wall_us_per_dispatch": 6.550000000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.040625,
+          "wall_us_per_dispatch": 11.0203125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.754375,
+          "wall_us_per_dispatch": 5.942187499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.701875,
+          "wall_us_per_dispatch": 5.584375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.012499999999999,
+          "wall_us_per_dispatch": 11.250000000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.76875,
+          "wall_us_per_dispatch": 5.646875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.0,
+          "wall_us_per_dispatch": 18.421874999999996,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.176875,
+          "wall_us_per_dispatch": 11.4609375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.684375,
+          "wall_us_per_dispatch": 5.6,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.001875,
+          "wall_us_per_dispatch": 10.676562500000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.651875,
+          "wall_us_per_dispatch": 5.8890625000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.711875,
+          "wall_us_per_dispatch": 5.615625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.03125,
+          "wall_us_per_dispatch": 10.801562500000001,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "finite_clamp_forward",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 64,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 64,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.144375,
+          "gpu_us_per_dispatch_min": 3.05875,
+          "gpu_us_per_dispatch_max": 3.3181249999999998,
+          "wall_us_per_dispatch_median": 5.121874999999999,
+          "wall_us_per_dispatch_min": 5.012499999999999,
+          "wall_us_per_dispatch_max": 5.509375
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.213125,
+          "gpu_us_per_dispatch_min": 3.19125,
+          "gpu_us_per_dispatch_max": 3.3606249999999998,
+          "wall_us_per_dispatch_median": 8.070312500000002,
+          "wall_us_per_dispatch_min": 7.918749999999998,
+          "wall_us_per_dispatch_max": 9.3828125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 0.06874999999999964,
+      "inherited_wall_us_per_dispatch": 2.9484375000000025,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.113125,
+          "wall_us_per_dispatch": 5.028125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.1975,
+          "wall_us_per_dispatch": 7.918749999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.3606249999999998,
+          "wall_us_per_dispatch": 8.4859375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.1525,
+          "wall_us_per_dispatch": 5.509375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.19125,
+          "wall_us_per_dispatch": 7.990625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.08625,
+          "wall_us_per_dispatch": 5.0171875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.05875,
+          "wall_us_per_dispatch": 5.0546875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.23375,
+          "wall_us_per_dispatch": 8.026562499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.100625,
+          "wall_us_per_dispatch": 5.012499999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.209375,
+          "wall_us_per_dispatch": 8.070312500000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.213125,
+          "wall_us_per_dispatch": 8.065625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.258125,
+          "wall_us_per_dispatch": 5.3453125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.204375,
+          "wall_us_per_dispatch": 9.3828125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.144375,
+          "wall_us_per_dispatch": 5.121874999999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.3181249999999998,
+          "wall_us_per_dispatch": 5.348437500000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.276875,
+          "wall_us_per_dispatch": 8.404687500000001,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.718125,
+          "gpu_us_per_dispatch_min": 2.4153124999999998,
+          "gpu_us_per_dispatch_max": 4.3165625,
+          "wall_us_per_dispatch_median": 10.44453125,
+          "wall_us_per_dispatch_min": 3.46640625,
+          "wall_us_per_dispatch_max": 15.942968749999999
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 15.440000000000001,
+          "gpu_us_per_dispatch_min": 10.0571875,
+          "gpu_us_per_dispatch_max": 15.9725,
+          "wall_us_per_dispatch_median": 22.466406250000002,
+          "wall_us_per_dispatch_min": 12.548437499999999,
+          "wall_us_per_dispatch_max": 23.94921875
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.721875,
+      "inherited_wall_us_per_dispatch": 12.021875000000001,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 2.4153124999999998,
+          "wall_us_per_dispatch": 3.46640625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 10.0571875,
+          "wall_us_per_dispatch": 12.548437499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 10.334375,
+          "wall_us_per_dispatch": 13.58671875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 2.6753125,
+          "wall_us_per_dispatch": 7.55390625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 10.729062500000001,
+          "wall_us_per_dispatch": 16.639062499999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 2.8325,
+          "wall_us_per_dispatch": 15.942968749999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.0234375,
+          "wall_us_per_dispatch": 11.27421875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 13.032812499999999,
+          "wall_us_per_dispatch": 20.989843750000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.718125,
+          "wall_us_per_dispatch": 13.505468749999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.440000000000001,
+          "wall_us_per_dispatch": 22.764062499999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9665625,
+          "wall_us_per_dispatch": 23.2390625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3159375,
+          "wall_us_per_dispatch": 10.44453125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9678125,
+          "wall_us_per_dispatch": 23.94921875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3165625,
+          "wall_us_per_dispatch": 9.53359375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.310625,
+          "wall_us_per_dispatch": 9.9484375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 15.9725,
+          "wall_us_per_dispatch": 22.466406250000002,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x128x128",
+      "grid": "8x2x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 16384,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 4.338125,
+          "gpu_us_per_dispatch_min": 4.3309375,
+          "gpu_us_per_dispatch_max": 4.3525,
+          "wall_us_per_dispatch_median": 9.8796875,
+          "wall_us_per_dispatch_min": 5.52734375,
+          "wall_us_per_dispatch_max": 12.702343749999999
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 16.3328125,
+          "gpu_us_per_dispatch_min": 16.293125,
+          "gpu_us_per_dispatch_max": 17.1375,
+          "wall_us_per_dispatch_median": 23.46171875,
+          "wall_us_per_dispatch_min": 22.49609375,
+          "wall_us_per_dispatch_max": 24.22578125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 11.9946875,
+      "inherited_wall_us_per_dispatch": 13.58203125,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.338125,
+          "wall_us_per_dispatch": 5.52734375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.2984375,
+          "wall_us_per_dispatch": 23.36328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.3328125,
+          "wall_us_per_dispatch": 23.45078125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.335,
+          "wall_us_per_dispatch": 12.702343749999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.293125,
+          "wall_us_per_dispatch": 24.0171875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.34625,
+          "wall_us_per_dispatch": 9.8125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3465625,
+          "wall_us_per_dispatch": 9.664843750000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.3121875,
+          "wall_us_per_dispatch": 23.465625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.335625,
+          "wall_us_per_dispatch": 6.40234375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.359375,
+          "wall_us_per_dispatch": 24.22578125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 17.1375,
+          "wall_us_per_dispatch": 23.46171875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3309375,
+          "wall_us_per_dispatch": 10.814062499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.3246875,
+          "wall_us_per_dispatch": 23.4421875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3525,
+          "wall_us_per_dispatch": 9.8796875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.3340625,
+          "wall_us_per_dispatch": 11.1875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 16.333125,
+          "wall_us_per_dispatch": 22.49609375,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "512x128x16",
+      "grid": "1x32x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 32768,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 8.491875,
+          "gpu_us_per_dispatch_min": 8.474374999999998,
+          "gpu_us_per_dispatch_max": 8.5015625,
+          "wall_us_per_dispatch_median": 13.911718750000002,
+          "wall_us_per_dispatch_min": 9.6875,
+          "wall_us_per_dispatch_max": 14.16484375
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 19.289375,
+          "gpu_us_per_dispatch_min": 19.2146875,
+          "gpu_us_per_dispatch_max": 22.740078125,
+          "wall_us_per_dispatch_median": 27.650781249999998,
+          "wall_us_per_dispatch_min": 22.903906250000002,
+          "wall_us_per_dispatch_max": 30.209375
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 10.7975,
+      "inherited_wall_us_per_dispatch": 13.739062499999996,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.491875,
+          "wall_us_per_dispatch": 9.6875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.340625,
+          "wall_us_per_dispatch": 27.59296875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.2146875,
+          "wall_us_per_dispatch": 30.209375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.479687499999999,
+          "wall_us_per_dispatch": 13.73671875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.27125,
+          "wall_us_per_dispatch": 26.095312500000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.485,
+          "wall_us_per_dispatch": 13.696093750000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.495312499999999,
+          "wall_us_per_dispatch": 12.434375000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.343125,
+          "wall_us_per_dispatch": 26.27578125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.5015625,
+          "wall_us_per_dispatch": 14.0671875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.289375,
+          "wall_us_per_dispatch": 27.900000000000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.2565625,
+          "wall_us_per_dispatch": 28.30390625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.474374999999998,
+          "wall_us_per_dispatch": 13.9875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 19.2271875,
+          "wall_us_per_dispatch": 27.650781249999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.48875,
+          "wall_us_per_dispatch": 14.16484375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 8.491875,
+          "wall_us_per_dispatch": 13.911718750000002,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 22.740078125,
+          "wall_us_per_dispatch": 22.903906250000002,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_forward",
+      "shape": "512x128x128",
+      "grid": "8x32x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 30.055625,
+          "gpu_us_per_dispatch_min": 23.358437499999997,
+          "gpu_us_per_dispatch_max": 66.07656250000001,
+          "wall_us_per_dispatch_median": 34.271875,
+          "wall_us_per_dispatch_min": 28.56328125,
+          "wall_us_per_dispatch_max": 69.01328125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 34.123124999999995,
+          "gpu_us_per_dispatch_min": 27.608125,
+          "gpu_us_per_dispatch_max": 60.236875000000005,
+          "wall_us_per_dispatch_median": 44.2671875,
+          "wall_us_per_dispatch_min": 35.71093750000001,
+          "wall_us_per_dispatch_max": 64.04140625000001
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 4.0674999999999955,
+      "inherited_wall_us_per_dispatch": 9.995312499999997,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 66.07656250000001,
+          "wall_us_per_dispatch": 69.01328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 60.236875000000005,
+          "wall_us_per_dispatch": 64.04140625000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 48.750625,
+          "wall_us_per_dispatch": 53.29453125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 37.4140625,
+          "wall_us_per_dispatch": 37.89296875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 39.023125,
+          "wall_us_per_dispatch": 46.275,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 30.92875,
+          "wall_us_per_dispatch": 36.467968750000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 30.055625,
+          "wall_us_per_dispatch": 34.271875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 34.123124999999995,
+          "wall_us_per_dispatch": 41.43828125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 27.87875,
+          "wall_us_per_dispatch": 32.89609375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 31.4340625,
+          "wall_us_per_dispatch": 39.021874999999994,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 30.009375000000002,
+          "wall_us_per_dispatch": 44.2671875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 24.626875,
+          "wall_us_per_dispatch": 29.963281249999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 28.83375,
+          "wall_us_per_dispatch": 42.91406249999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 23.770625,
+          "wall_us_per_dispatch": 28.8109375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 23.358437499999997,
+          "wall_us_per_dispatch": 28.56328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 27.608125,
+          "wall_us_per_dispatch": 35.71093750000001,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "shape": "32x512x512",
+      "grid": "32x2x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 65536,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 20.53,
+          "gpu_us_per_dispatch_min": 20.177500000000002,
+          "gpu_us_per_dispatch_max": 25.2884375,
+          "wall_us_per_dispatch_median": 27.334374999999998,
+          "wall_us_per_dispatch_min": 23.153125,
+          "wall_us_per_dispatch_max": 35.328125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 50.2671875,
+          "gpu_us_per_dispatch_min": 49.658750000000005,
+          "gpu_us_per_dispatch_max": 53.0596875,
+          "wall_us_per_dispatch_median": 60.560156250000006,
+          "wall_us_per_dispatch_min": 55.44296875,
+          "wall_us_per_dispatch_max": 62.50546875
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 29.737187499999997,
+      "inherited_wall_us_per_dispatch": 33.22578125000001,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 25.2884375,
+          "wall_us_per_dispatch": 30.34921875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 53.0596875,
+          "wall_us_per_dispatch": 62.50546875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 51.932812500000004,
+          "wall_us_per_dispatch": 61.9640625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 21.854374999999997,
+          "wall_us_per_dispatch": 27.334374999999998,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 50.6728125,
+          "wall_us_per_dispatch": 60.50156249999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.458750000000002,
+          "wall_us_per_dispatch": 25.399218749999996,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.53,
+          "wall_us_per_dispatch": 25.2390625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 50.2671875,
+          "wall_us_per_dispatch": 59.45078124999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.4084375,
+          "wall_us_per_dispatch": 23.153125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 50.0396875,
+          "wall_us_per_dispatch": 57.893750000000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 50.101875,
+          "wall_us_per_dispatch": 60.819531250000004,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.177500000000002,
+          "wall_us_per_dispatch": 25.18046875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 49.658750000000005,
+          "wall_us_per_dispatch": 55.44296875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.2734375,
+          "wall_us_per_dispatch": 29.60625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 20.5846875,
+          "wall_us_per_dispatch": 35.328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 49.746875,
+          "wall_us_per_dispatch": 60.560156250000006,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "vector_add",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.9009375,
+          "gpu_us_per_dispatch_min": 3.84125,
+          "gpu_us_per_dispatch_max": 4.019375,
+          "wall_us_per_dispatch_median": 6.08046875,
+          "wall_us_per_dispatch_min": 5.025,
+          "wall_us_per_dispatch_max": 12.753125
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 6.0340625,
+          "gpu_us_per_dispatch_min": 5.981249999999999,
+          "gpu_us_per_dispatch_max": 6.3396875,
+          "wall_us_per_dispatch_median": 11.459375000000001,
+          "wall_us_per_dispatch_min": 9.8546875,
+          "wall_us_per_dispatch_max": 15.2328125
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 2.133125,
+      "inherited_wall_us_per_dispatch": 5.378906250000002,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.9009375,
+          "wall_us_per_dispatch": 5.025,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 5.981249999999999,
+          "wall_us_per_dispatch": 9.8546875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.0103125,
+          "wall_us_per_dispatch": 10.46640625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.9290625,
+          "wall_us_per_dispatch": 5.742968750000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.127812499999999,
+          "wall_us_per_dispatch": 10.714062499999999,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.84125,
+          "wall_us_per_dispatch": 5.7953125000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.8815625000000002,
+          "wall_us_per_dispatch": 12.753125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.0340625,
+          "wall_us_per_dispatch": 14.39453125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 4.019375,
+          "wall_us_per_dispatch": 6.08046875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 5.9990625,
+          "wall_us_per_dispatch": 11.459375000000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.0278125000000005,
+          "wall_us_per_dispatch": 10.86171875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.9128125,
+          "wall_us_per_dispatch": 5.653125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.3396875,
+          "wall_us_per_dispatch": 15.2328125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.885,
+          "wall_us_per_dispatch": 9.09453125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.8921875,
+          "wall_us_per_dispatch": 7.914843750000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 6.0715625,
+          "wall_us_per_dispatch": 12.9046875,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    },
+    {
+      "kernel": "finite_clamp_forward",
+      "shape": "1x65536x1",
+      "grid": "256x1x1",
+      "block": 128,
+      "trials": 4,
+      "barriers_recorded_after_barrier_arm": 128,
+      "barriers_recorded_after_dispatch_arm": 0,
+      "output_bytes_per_dispatch": 262144,
+      "arms": [
+        {
+          "placement": "after_dispatch",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.2421875,
+          "gpu_us_per_dispatch_min": 3.1603125,
+          "gpu_us_per_dispatch_max": 3.2828125000000004,
+          "wall_us_per_dispatch_median": 4.9281250000000005,
+          "wall_us_per_dispatch_min": 4.3257812499999995,
+          "wall_us_per_dispatch_max": 5.1703125000000005
+        },
+        {
+          "placement": "after_barrier",
+          "samples": 8,
+          "gpu_us_per_dispatch_median": 3.803125,
+          "gpu_us_per_dispatch_min": 3.3868750000000003,
+          "gpu_us_per_dispatch_max": 3.934375,
+          "wall_us_per_dispatch_median": 8.98125,
+          "wall_us_per_dispatch_min": 7.825,
+          "wall_us_per_dispatch_max": 9.5046875
+        }
+      ],
+      "inherited_gpu_us_per_dispatch": 0.5609375000000001,
+      "inherited_wall_us_per_dispatch": 4.053124999999999,
+      "schedule": [
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_barrier",
+        "after_dispatch",
+        "after_barrier",
+        "after_dispatch",
+        "after_dispatch",
+        "after_barrier"
+      ],
+      "readings": [
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.1603125,
+          "wall_us_per_dispatch": 4.3257812499999995,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.3868750000000003,
+          "wall_us_per_dispatch": 7.825,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.4184375,
+          "wall_us_per_dispatch": 8.088281250000001,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.231875,
+          "wall_us_per_dispatch": 4.49375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.4271875,
+          "wall_us_per_dispatch": 8.31640625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.2421875,
+          "wall_us_per_dispatch": 4.65078125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.2621875,
+          "wall_us_per_dispatch": 4.9281250000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.6037500000000002,
+          "wall_us_per_dispatch": 8.37890625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.1853125,
+          "wall_us_per_dispatch": 4.440625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.803125,
+          "wall_us_per_dispatch": 8.98125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.835625,
+          "wall_us_per_dispatch": 8.99140625,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.2034375,
+          "wall_us_per_dispatch": 5.08984375,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.934375,
+          "wall_us_per_dispatch": 9.5046875,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.2828125000000004,
+          "wall_us_per_dispatch": 5.1703125000000005,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_dispatch",
+          "gpu_us_per_dispatch": 3.26875,
+          "wall_us_per_dispatch": 5.003125,
+          "gpu_timed_from_timestamps": true
+        },
+        {
+          "placement": "after_barrier",
+          "gpu_us_per_dispatch": 3.9265625,
+          "wall_us_per_dispatch": 9.190624999999999,
+          "gpu_timed_from_timestamps": true
+        }
+      ]
+    }
+  ]
+}

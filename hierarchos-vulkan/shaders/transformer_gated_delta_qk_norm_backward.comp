@@ -7,7 +7,7 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 layout(set = 0, binding = 0, std430) readonly buffer PackedQkvBuffer { float packed_qkv[]; };
 layout(set = 0, binding = 1, std430) readonly buffer GradQExpandedBuffer { float grad_q_expanded[]; };
 layout(set = 0, binding = 2, std430) readonly buffer GradKExpandedBuffer { float grad_k_expanded[]; };
-layout(set = 0, binding = 3, std430) buffer GradPackedQkvBuffer { float grad_packed_qkv[]; };
+layout(set = 0, binding = 3, std430) writeonly buffer GradPackedQkvBuffer { float grad_packed_qkv[]; };
 
 layout(push_constant) uniform Push {
     uint batch_size;

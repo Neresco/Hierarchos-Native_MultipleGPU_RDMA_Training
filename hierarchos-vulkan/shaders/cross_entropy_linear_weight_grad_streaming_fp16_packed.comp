@@ -114,6 +114,12 @@ void main() {
                 ) {
                     float chunk_sum = 0.0;
                     for (uint local_row = 0u; local_row < row_count; ++local_row) {
+                        // The tape has no separate row-mask binding. An exact
+                        // zero adjoint contributes nothing, including for a
+                        // masked row with non-finite reconstructed activations.
+                        if (grad_rows[vocab_lane][local_row] == 0.0) {
+                            continue;
+                        }
 #if LM_NATIVE_FP16_BACKWARD_COMPUTE
                         // Keep the canonical dW destination and accumulation
                         // in FP32, but make the linear backward product itself

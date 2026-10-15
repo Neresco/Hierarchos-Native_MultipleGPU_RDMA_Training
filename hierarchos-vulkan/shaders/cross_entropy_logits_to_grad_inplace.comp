@@ -23,6 +23,10 @@ void main() {
     uint row = index / pc.output_dim;
     uint out_col = index - row * pc.output_dim;
     uint stats_base = row * 5u;
+    if (row_stats[stats_base + 4u] == 0.0) {
+        logit_grad_tape[index] = 0.0;
+        return;
+    }
     float max_logit = row_stats[stats_base];
     float inv_sum = row_stats[stats_base + 1u];
     uint target = floatBitsToUint(row_stats[stats_base + 2u]);

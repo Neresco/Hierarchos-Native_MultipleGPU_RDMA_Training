@@ -10,6 +10,7 @@ use crate::{vendor, vulkan, AdamWHyperParams, GpuBuffer, VulkanDevice};
 
 const GRADIENT_ACCUMULATE_SPV: &[u8] = include_bytes!("../shaders/gradient_accumulate.spv");
 const GRADIENT_ACCUMULATE4_SPV: &[u8] = include_bytes!("../shaders/gradient_accumulate4.spv");
+const GRADIENT_ACCUMULATE8_SPV: &[u8] = include_bytes!("../shaders/gradient_accumulate8.spv");
 const GRADIENT_SCALE_SPV: &[u8] = include_bytes!("../shaders/gradient_scale.spv");
 const GRADIENT_SCALE_FROM_BUFFER_SPV: &[u8] =
     include_bytes!("../shaders/gradient_scale_from_buffer.spv");
@@ -134,6 +135,16 @@ struct GradientAccumulate4Push {
     len1: u32,
     len2: u32,
     len3: u32,
+}
+
+/// Eight slot lengths for `gradient_accumulate8`. An incomplete group is padded
+/// with zero lengths, which makes the padded slots inert: they contribute no
+/// groups to the grid and their index test never passes. That is what turns a
+/// call site's leftover tensors from one dispatch each into a single dispatch.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GradientAccumulate8Push {
+    len: [u32; 8],
 }
 
 #[repr(C)]
@@ -1477,6 +1488,7 @@ pub(crate) struct RwkvPersistentAdamW {
     permanently_inactive_names: HashSet<String>,
     gradient_accumulate: vulkan::ComputeKernel,
     gradient_accumulate4: Option<vulkan::ComputeKernel>,
+    gradient_accumulate8: Option<vulkan::ComputeKernel>,
     gradient_scale: vulkan::ComputeKernel,
     gradient_scale_from_buffer: vulkan::ComputeKernel,
     gradient_scale_from_buffer_indexed: vulkan::ComputeKernel,
@@ -1535,6 +1547,33 @@ impl RwkvPersistentAdamW {
                 ],
                 std::mem::size_of::<LenPush>() as u32,
             )?,
+            gradient_accumulate8: if device.supports_storage_buffer_bindings(16) {
+                Some(vulkan::ComputeKernel::new_with_access(
+                    &device,
+                    GRADIENT_ACCUMULATE8_SPV,
+                    &[
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                        vulkan::BindingAccess::ReadWrite,
+                        vulkan::BindingAccess::ReadOnly,
+                    ],
+                    std::mem::size_of::<GradientAccumulate8Push>() as u32,
+                )?)
+            } else {
+                None
+            },
             gradient_accumulate4: if device.supports_storage_buffer_bindings(8) {
                 Some(vulkan::ComputeKernel::new_with_access(
                     &device,
@@ -2458,6 +2497,38 @@ impl RwkvPersistentAdamW {
         commands: &mut vulkan::ComputeBatch,
         entries: &[(&OptimizerSlot, &GpuBuffer)],
     ) -> Result<()> {
+        // Eight-wide groups first when the device has the bindings for them. The
+        // final group is padded rather than split off, so a call site with 33
+        // tensors costs five dispatches instead of nine; the four-wide kernel stays
+        // for devices whose binding limit admits it but not this one.
+        if let Some(kernel8) = self.gradient_accumulate8.as_ref() {
+            for chunk in entries.chunks(8) {
+                let mut lens = [0u32; 8];
+                for (index, (slot, _)) in chunk.iter().enumerate() {
+                    lens[index] = slot.len as u32;
+                }
+                let mut buffers = Vec::with_capacity(16);
+                for index in 0..8 {
+                    // Padding repeats the first entry's buffers, whose lengths are
+                    // zero, so the padded slots never touch them.
+                    let (slot, gradient) = chunk.get(index).copied().unwrap_or(chunk[0]);
+                    buffers.push(&slot.accumulated_grad);
+                    buffers.push(gradient);
+                }
+                let group_count = lens
+                    .iter()
+                    .map(|len| div_ceil_u32(*len as usize, 256))
+                    .sum();
+                kernel8.record_dispatch(
+                    commands,
+                    &buffers,
+                    bytemuck::bytes_of(&GradientAccumulate8Push { len: lens }),
+                    [group_count, 1, 1],
+                )?;
+            }
+            return Ok(());
+        }
+
         let Some(kernel) = self.gradient_accumulate4.as_ref() else {
             for (slot, gradient) in entries {
                 self.record_accumulate_entry(commands, slot, gradient)?;
@@ -4427,6 +4498,85 @@ mod tests {
         VulkanDynamicLossScaleController, VulkanDynamicLossScaleSeed,
         DYNAMIC_LOSS_SCALE_CONTROL_UNSCALE_FACTOR_WORD,
     };
+
+    #[test]
+    fn eight_way_accumulation_matches_four_way_and_scalar_at_group_edges() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        if !device.supports_storage_buffer_bindings(16) {
+            eprintln!("eight-way kernel requires 16 storage buffer bindings");
+            return Ok(());
+        }
+        for count in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 33] {
+            let names = (0..count)
+                .map(|index| format!("weight_{index}"))
+                .collect::<Vec<_>>();
+            let lengths = (0..count)
+                .map(|index| [1usize, 255, 256, 257, 511, 512, 513, 1025][index % 8])
+                .collect::<Vec<_>>();
+            let parameters = lengths
+                .iter()
+                .map(|&len| GpuBuffer::zeros_f32(&device, len))
+                .collect::<Result<Vec<_>>>()?;
+            let gradients = lengths
+                .iter()
+                .enumerate()
+                .map(|(slot, &len)| {
+                    GpuBuffer::from_f32(
+                        &device,
+                        &(0..len)
+                            .map(|index| ((index * 13 + slot * 7) % 101) as f32 / 64.0 - 0.75)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let trainables = (0..count)
+                .map(|index| RwkvTrainableRef {
+                    name: &names[index],
+                    parameter: &parameters[index],
+                    gradient: &gradients[index],
+                    len: lengths[index],
+                    decay_class: RwkvDecayClass::Decay,
+                })
+                .collect::<Vec<_>>();
+            let eight = RwkvPersistentAdamW::new(device.clone(), &trainables)?;
+            let mut four = RwkvPersistentAdamW::new(device.clone(), &trainables)?;
+            four.gradient_accumulate8 = None;
+            let mut scalar = RwkvPersistentAdamW::new(device.clone(), &trainables)?;
+            scalar.gradient_accumulate8 = None;
+            scalar.gradient_accumulate4 = None;
+            for optimizer in [&eight, &four, &scalar] {
+                let mut commands = vulkan::ComputeBatch::new(&device)?;
+                optimizer.record_zero_grad(&mut commands)?;
+                for _ in 0..3 {
+                    optimizer.record_accumulate(&mut commands, &trainables)?;
+                }
+                commands.submit()?;
+            }
+            let expected = scalar.gradient_state_snapshot_with_override(None)?;
+            for (label, optimizer) in [("eight", &eight), ("four", &four)] {
+                let actual = optimizer.gradient_state_snapshot_with_override(None)?;
+                assert_eq!(actual.len(), expected.len());
+                for (actual, expected) in actual.iter().zip(&expected) {
+                    assert_eq!(actual.name, expected.name);
+                    assert_eq!(
+                        actual
+                            .values
+                            .iter()
+                            .map(|value| value.to_bits())
+                            .collect::<Vec<_>>(),
+                        expected
+                            .values
+                            .iter()
+                            .map(|value| value.to_bits())
+                            .collect::<Vec<_>>(),
+                        "{label}-way accumulation differs for {} of {count} tensors",
+                        actual.name
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn optimizer_generation_waits_for_every_broadcast_source_clone() -> Result<()> {

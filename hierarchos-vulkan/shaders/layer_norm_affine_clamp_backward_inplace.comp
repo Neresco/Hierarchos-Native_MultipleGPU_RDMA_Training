@@ -12,7 +12,7 @@ layout(set = 0, binding = 1, std430) readonly buffer NormWeightBuffer { float no
 layout(set = 0, binding = 2, std430) readonly buffer NormBiasBuffer { float norm_bias[]; };
 layout(set = 0, binding = 3, std430) readonly buffer NormMeanBuffer { float norm_mean[]; };
 layout(set = 0, binding = 4, std430) readonly buffer NormRstdBuffer { float norm_rstd[]; };
-layout(set = 0, binding = 5, std430) buffer GradAffineBuffer { float grad_affine[]; };
+layout(set = 0, binding = 5, std430) writeonly buffer GradAffineBuffer { float grad_affine[]; };
 
 layout(push_constant) uniform Push {
     uint rows;

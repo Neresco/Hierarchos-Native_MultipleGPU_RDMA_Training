@@ -1,0 +1,362 @@
+{
+  "compiler": "shaderc v2023.8 v2025.3\nspirv-tools v2025.3 v2022.4-833-g33e02568\nglslang 11.1.0-1253-gefd24d75\n\nTarget: SPIR-V 1.0",
+  "variants": [
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming.spv",
+      "source": "cross_entropy_linear_input_grad_streaming.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "fc9e843127f46109dd4017aed340d699e4f4f0a5758233d5cc01e4275641e6e4",
+      "sha256": "a5d7aab2889a2e955e71ae57f1be1c587f19163531b4bca922ca287a120d98a7",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "27ddf41ef6f0ebdad4b9ff042e48998f2ee428a5c18bc687a9cb586b7a0dc846",
+      "sha256": "db4eaf01b0f92efe000ec5a3d441dc881d3d4a15ae58ed3939c45e31693fdbc2",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "5303033cf1c11d39e1cd7e5b4723aba265858fa8b1f7ef1bad20a5d9f162084e",
+      "sha256": "bc66990209b2c1c12038b7ef5fcfd514cd200353a185fa86a3f096de06de883f",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_tape_fp16_packed.spv",
+      "source": "cross_entropy_linear_input_grad_tape_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "13fb743456d5e5ba8bf2f88b720035ffaa2ae5d65839e9d91b52d650748c11b2",
+      "sha256": "2f448de87d69964e3e131515e6bafd35a91caeb4ae0f6b0589ec4006b432ce29",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_logits_to_grad_inplace.spv",
+      "source": "cross_entropy_logits_to_grad_inplace.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "b44de54aadd1c2b5f8dcfba99cee650354a3173ba72c7be845d4b2cde334edb8",
+      "sha256": "26071fe827b94e218c62631c07eae808dc3935f4f0efbf11992e04f14a37a16b",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming.spv",
+      "source": "cross_entropy_linear_row_stats_streaming.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "a23b88689c3e638972420e5d03871f2a7f4d6648aa53447a437f243d76f880e2",
+      "sha256": "bd85c620ecc919247bd3f781b9190a62d85d5e4f1857999a529f10aa6b3a0414",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_row_stats_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "196cb4e60fff7354107d51f2367d9db306e1de98d84ba27123558f5c7e960429",
+      "sha256": "e11631c68e1d9bd48c998ad4bbad459a876a6a8ff0e6f92644a4d05d07bfbf6b",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tape.spv",
+      "source": "cross_entropy_row_stats_tape.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "264e6d48de799eb2e1a8df2691b07609b4e9484beee6efc2b1fc22fdf5f27c74",
+      "sha256": "293c32fe9f5b57b76974549bbf6aa6f3e1eab37d1347881af6df41e9cf8c5809",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tile_partials.spv",
+      "source": "cross_entropy_row_stats_tile_partials.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "9ebab2f3ab281c22b28ecfd490a63515b1209e1f2194bdda9813dd2f4a29ee43",
+      "sha256": "c51abdd0873c2e93cd7bec0eeeda3a7180121fdff651b9bab7fb582b15e747f7",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming_fp16_packed_tape.spv",
+      "source": "cross_entropy_linear_row_stats_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_WRITE_LOGIT_TAPE=1"
+      ],
+      "source_sha256": "196cb4e60fff7354107d51f2367d9db306e1de98d84ba27123558f5c7e960429",
+      "sha256": "654ee9d1e3ff3b07c251e39735e25114c9c8bddd62723c865cca439abe99d33d",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tile_partials_rows16.spv",
+      "source": "cross_entropy_row_stats_tile_partials.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_VOCAB_TILE=16"
+      ],
+      "source_sha256": "9ebab2f3ab281c22b28ecfd490a63515b1209e1f2194bdda9813dd2f4a29ee43",
+      "sha256": "72443bc58c920eca8e3e0eafd57cae5b228422f5a0911727a7bec3e22774b99d",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "a0bfd41c182297be5ca68cb25910b78ad09d2b683e6e58262846514ae4eb71fe",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_compute.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "5efaece4eab6be8d0a380a7a7197d52d754dbf44dadbebcae0b4a72a16d5bd06",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse64.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=64"
+      ],
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "fa2714ce7ba01cecf44cd3ea8060ba30af47076cf4bb8a00673fc35f5d535734",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse128.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=128"
+      ],
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "e8e552f695be1d00c4c8fe810f255eacac490d355977bd73b3627ae225cad4c1",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse224.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=224"
+      ],
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "645d31ff318aee75f7ce0aa6675004a025d891ad02ef45b879113292fe026839",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "a0bff34e84826c67782dc171ec5bac158e47f771d54a87eac6effaa0c4ada788",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "5aa9a94d21ba90fbe465f5465200acccd3ac0efbe8546ea5921277664276fb1c",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "221760d9d5135847ba73302771040aacf91cb7eda81f0b4a6821183be2393ccb",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "57865f9e66111fb7d6a6c7cbf53255381945d867540e702b8d3b0a191c39cc03",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "b1e28cc05ccc01f80abb63ef8a9c21d5af694a180322149114af22c8f214bfe6",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "8c288fbd120ba0bcc36749c5cca644c70769f9d5e343d64f9ea04525fab05557",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8"
+      ],
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "52b0b9cf06c45bec5267ba73270d633e67b5cf0732a10a07d391f8a5ac4a7fc7",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4"
+      ],
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "4f644bc1bbb4cdb1d832c8f1e619dfc63ec5c6cdb1d825b2e341c429fbbc8c3d",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16"
+      ],
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "3823f403dd02db03e87bdeba84322a552130d16c0589527c7b96201e6fff5c53",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "252fb174995e297b97121f0d806b1cbbb9714d1a103dab6a12d06d323964c36a",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=64",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "ef00c6041c387b586b36c0142c992d573f1d998c63cb22c01f126e9ff34a2ca1",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=128",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "048949131aa303e783f33ec5619b58430157229ef5cefa570bba197d0073795d",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile128_wg128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=128",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=128"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "752bfeafef4e43efcd73e34f7807debc3bbe860fc8f665974f76f597c25fb182",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "23eb3977b5ca190308e473bb288d62686c346084efb08c2d73d0a28539b278d0",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256_wg128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=128"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "baae693740755b5390996d42ad2fdb2fafba9974c8f7720fe5eaaa3d1894f164",
+      "matches": true
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256_wg256.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=256"
+      ],
+      "source_sha256": "4ec35d181e39b329aa2e01a5998774359709d7a9483cb38ffb4e896594263a30",
+      "sha256": "e9f2412b37cae16e658b2c971c01bcfc2a1cd1a72f04cbe7c76645037037c983",
+      "matches": true
+    }
+  ],
+  "pass": true
+}

@@ -3,14 +3,14 @@
 #include "fp32_sqrt_recip.glsl"
 // Falcon H1 Mamba2. FP32 staging deliberately preserves the unfused HF oracle.
 layout(local_size_x=64) in;
-layout(set=0,binding=0,std430) buffer Proj { float proj[]; };
-layout(set=0,binding=1,std430) buffer Params { float par[]; };
+layout(set=0,binding=0,std430) readonly buffer Proj { float proj[]; };
+layout(set=0,binding=1,std430) readonly buffer Params { float par[]; };
 layout(set=0,binding=2,std430) buffer Conv { float conv[]; };
 layout(set=0,binding=3,std430) buffer Scan { float scan[]; };
-layout(set=0,binding=4,std430) buffer Output { float output_data[]; };
+layout(set=0,binding=4,std430) writeonly buffer Output { float output_data[]; };
 layout(set=0,binding=5,std430) buffer States { float states[]; };
-layout(set=0,binding=6,std430) buffer GradOutput { float go[]; };
-layout(set=0,binding=7,std430) buffer GradProj { float gp[]; };
+layout(set=0,binding=6,std430) readonly buffer GradOutput { float go[]; };
+layout(set=0,binding=7,std430) writeonly buffer GradProj { float gp[]; };
 layout(set=0,binding=8,std430) buffer GradConv { float gc[]; };
 layout(set=0,binding=9,std430) buffer GradScan { float gs[]; };
 layout(set=0,binding=10,std430) buffer GradParams { float gw[]; };

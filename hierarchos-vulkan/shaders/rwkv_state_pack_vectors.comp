@@ -10,7 +10,7 @@ layout(set = 0, binding = 0, std430) readonly buffer XNormBuffer { float x_norm[
 layout(set = 0, binding = 1, std430) readonly buffer XNorm2Buffer { float x_norm2[]; };
 layout(set = 0, binding = 2, std430) readonly buffer VFirstBuffer { float v_first[]; };
 layout(set = 0, binding = 3, std430) readonly buffer OutputBuffer { float output_values[]; };
-layout(set = 0, binding = 4, std430) buffer PackedStateBuffer { float packed_state[]; };
+layout(set = 0, binding = 4, std430) writeonly buffer PackedStateBuffer { float packed_state[]; };
 
 layout(push_constant) uniform Push {
     uint batch;

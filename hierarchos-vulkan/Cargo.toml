@@ -192,3 +192,9 @@ path = "src/bin/transformer_train.rs"
 [[bin]]
 name = "hierarchos-vulkan-transformer-logits"
 path = "src/bin/transformer_logits.rs"
+
+# Standalone shader parity/benchmark harness; compares candidate modules under
+# shaders/ against a directory of baseline modules supplied on the command line.
+[[bin]]
+name = "attention_kernel_cache_check"
+path = "validation/attention_kernel_cache_check.rs"

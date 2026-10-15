@@ -1,0 +1,42 @@
+[
+  {
+    "step": "cargo build (ladder binaries)",
+    "status": "PASS",
+    "detail": "finished (release)"
+  },
+  {
+    "step": "binding-access audit",
+    "status": "PASS",
+    "detail": "0 provably narrower binding(s) over 0 shader(s) out of 468 modules"
+  },
+  {
+    "step": "shader provenance",
+    "status": "PASS",
+    "detail": "86 variant(s) match their sources and flags"
+  },
+  {
+    "step": "golden dense (matmul)",
+    "status": "PASS",
+    "detail": "PASS: golden digests verified for 144 invocation(s) on AMD Radeon Graphics (0 unverified on another device)"
+  },
+  {
+    "step": "golden reduction",
+    "status": "PASS",
+    "detail": "PASS: golden digests verified for 183 invocation(s) on AMD Radeon Graphics (0 unverified on another device)"
+  },
+  {
+    "step": "golden attention",
+    "status": "PASS",
+    "detail": "PASS: golden digests verified for 79 invocation(s) on AMD Radeon Graphics (0 unverified on another device)"
+  },
+  {
+    "step": "training-step probe",
+    "status": "PASS",
+    "detail": "6464 dispatches, 3076 barriers (upper bound 3076), loss 5.543217 on AMD Radeon Graphics"
+  },
+  {
+    "step": "training-state parity",
+    "status": "PASS",
+    "detail": "PASS: 13 training steps, 3817 exact tensor digests"
+  }
+]

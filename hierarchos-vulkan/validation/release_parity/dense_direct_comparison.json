@@ -1,0 +1,1302 @@
+{
+  "device": "AMD Radeon Graphics",
+  "checks": [
+    {
+      "kernel": "linear_forward",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_residual_forward",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "linear_bias_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 33,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 112,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 136,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 128,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 264,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1139,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 2945,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4323,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 18,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_bias_forward_fp16_packed",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1008,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 65,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 448,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 504,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 512,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 520,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1536,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1105,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 3007,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4257,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 62,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 65,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 448,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 504,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 512,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 520,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1536,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1105,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 3007,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4257,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 62,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_packed",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 1,
+      "input_dim": 1,
+      "output_dim": 1,
+      "elements": 1,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0000047683716
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 1,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 65,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.00088357925
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 7,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 448,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0008928776
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 8,
+      "input_dim": 63,
+      "output_dim": 17,
+      "elements": 504,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.00076532364
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 8,
+      "input_dim": 64,
+      "output_dim": 16,
+      "elements": 512,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0008928776
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 8,
+      "input_dim": 65,
+      "output_dim": 33,
+      "elements": 520,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0012180805
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 16,
+      "input_dim": 96,
+      "output_dim": 64,
+      "elements": 1536,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0018466711
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 17,
+      "input_dim": 65,
+      "output_dim": 67,
+      "elements": 1105,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0015883446
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 31,
+      "input_dim": 97,
+      "output_dim": 95,
+      "elements": 3007,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0023674965
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 33,
+      "input_dim": 129,
+      "output_dim": 131,
+      "elements": 4257,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.002585888
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 2,
+      "input_dim": 31,
+      "output_dim": 9,
+      "elements": 62,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.00036925077
+    },
+    {
+      "kernel": "parameter_matmul_input_grad_fp16_native_compute",
+      "rows": 16,
+      "input_dim": 64,
+      "output_dim": 63,
+      "elements": 1024,
+      "baseline_bitwise_equal": true,
+      "max_reference_error": 0.0017867684
+    }
+  ],
+  "timings": []
+}

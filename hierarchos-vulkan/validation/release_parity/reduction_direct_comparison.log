@@ -1,0 +1,8 @@
+device=AMD Radeon Graphics
+qwen rows=128 heads=4 dim=128 old_ms=2.747995 new_ms=0.247085 speedup=11.122
+qwen rows=256 heads=4 dim=192 old_ms=4.768595 new_ms=0.472530 speedup=10.092
+transformer_rms_norm_input_grad rows=128 dim=256 old_ms=0.272815 new_ms=0.214380 speedup=1.273
+transformer_rms_norm_input_grad_residual rows=128 dim=256 old_ms=0.418855 new_ms=0.365285 speedup=1.147
+adamw len=65537 old_ms=0.028655 new_ms=0.019450 speedup=1.473
+PASS: 183 GPU cases, all compared outputs bit-identical
+PASS: golden digests verified for 183 invocation(s) on AMD Radeon Graphics (0 unverified on another device)

@@ -1,0 +1,45 @@
+{
+  "device": "AMD Radeon Graphics",
+  "model_dir": "C:/Users/User/Downloads/Hierarchos-Native/hierarchos-vulkan/validation/training_step_probe/runs/current",
+  "batch": 2,
+  "tokens_per_sequence": 8,
+  "sequences": 1,
+  "batch_tokens_per_step": 16,
+  "warmup_steps": 1,
+  "measured_steps": 5,
+  "readback": "full",
+  "median_step_ms": 167.98080000000002,
+  "median_tokens_per_second": 95.24898083590504,
+  "median_steps_per_second": 5.953061302244065,
+  "dispatch_count": 6912,
+  "shader_barrier_count": 3076,
+  "queue_submissions": 1,
+  "mean_loss": 4.6006656,
+  "samples": [
+    {
+      "step": 0,
+      "elapsed_ms": 167.9651,
+      "tokens_per_second": 95.25788392945915
+    },
+    {
+      "step": 1,
+      "elapsed_ms": 167.4831,
+      "tokens_per_second": 95.53202681345162
+    },
+    {
+      "step": 2,
+      "elapsed_ms": 169.03209999999999,
+      "tokens_per_second": 94.65657706435643
+    },
+    {
+      "step": 3,
+      "elapsed_ms": 168.27790000000002,
+      "tokens_per_second": 95.08081572208827
+    },
+    {
+      "step": 4,
+      "elapsed_ms": 167.98080000000002,
+      "tokens_per_second": 95.24898083590504
+    }
+  ]
+}

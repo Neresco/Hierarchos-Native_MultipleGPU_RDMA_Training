@@ -2,6 +2,17 @@
 
 // Deterministic learned-weight reduction for Qwen's gated RMSNorm. One
 // invocation owns one feature and reduces every row/head use of that feature.
+// Cache one tile of ordered row statistics cooperatively: computing a whole
+// RMS reduction separately for every feature makes this pass quadratic in
+// head_dim. The feature accumulation and each RMS keep their original order.
+//
+// The tile carries the raw mean-square sum, not its reciprocal square root.
+// AMD lowers `inversesqrt` differently when the result crosses a workgroup
+// broadcast: publishing inv_rms shifted roughly half of the reduced elements by
+// one ULP against the pre-optimization kernel, while evaluating the same
+// expression in the consuming lane reproduces every element bit-for-bit. The
+// suppressed head_dim multiplier on the mean-square reduction is what this
+// pass removes; the per-feature inverse square root is not the cost.
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std430) readonly buffer InputBuffer { float input_values[]; };
@@ -16,22 +27,41 @@ layout(push_constant) uniform Push {
     float epsilon;
 } pc;
 
+shared float tile_mean_square[64];
+
 void main() {
     uint dim = gl_GlobalInvocationID.x;
-    if (dim >= pc.head_dim) return;
+    uint lane = gl_LocalInvocationID.x;
     float sum = 0.0;
     uint row_heads = pc.rows * pc.num_heads;
-    for (uint row_head = 0u; row_head < row_heads; ++row_head) {
-        uint base = row_head * pc.head_dim;
-        float mean_square = 0.0;
-        for (uint d = 0u; d < pc.head_dim; ++d) {
-            float x = input_values[base + d];
-            mean_square = fma(x, x, mean_square);
+    for (uint tile = 0u; tile < row_heads; tile += 64u) {
+        uint row_head = tile + lane;
+        if (row_head < row_heads) {
+            uint base = row_head * pc.head_dim;
+            float mean_square = 0.0;
+            for (uint d = 0u; d < pc.head_dim; ++d) {
+                float x = input_values[base + d];
+                mean_square = fma(x, x, mean_square);
+            }
+            tile_mean_square[lane] = mean_square;
         }
-        float inv_rms = inversesqrt(mean_square / float(pc.head_dim) + pc.epsilon);
-        float z = gate_values[base + dim];
-        float silu_z = z / (1.0 + exp(-z));
-        sum = fma(grad_output[base + dim], input_values[base + dim] * inv_rms * silu_z, sum);
+        barrier();
+        if (dim < pc.head_dim) {
+            uint count = min(64u, row_heads - tile);
+            for (uint row_offset = 0u; row_offset < count; ++row_offset) {
+                uint base = (tile + row_offset) * pc.head_dim;
+                float inv_rms = inversesqrt(tile_mean_square[row_offset] / float(pc.head_dim) + pc.epsilon);
+                float z = gate_values[base + dim];
+                float silu_z = z / (1.0 + exp(-z));
+                sum = fma(grad_output[base + dim],
+                    input_values[base + dim] * inv_rms * silu_z, sum);
+            }
+        }
+        // Inactive feature lanes must also reach both barriers, including the
+        // final partial feature group and final partial statistics tile.
+        barrier();
     }
-    grad_weight[dim] = sum;
+    if (dim < pc.head_dim) {
+        grad_weight[dim] = sum;
+    }
 }

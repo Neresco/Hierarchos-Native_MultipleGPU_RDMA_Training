@@ -42,6 +42,9 @@ shared float chunk_rstd[ROW_CHUNK];
 
 float ce_grad(uint row, uint out_col, float logit) {
     uint stats_base = row * 5u;
+    if (row_stats[stats_base + 4u] == 0.0) {
+        return 0.0;
+    }
     float max_logit = row_stats[stats_base];
     float inv_sum = row_stats[stats_base + 1u];
     uint target = floatBitsToUint(row_stats[stats_base + 2u]);
@@ -115,6 +118,11 @@ void main() {
             for (uint in_col = hidden_lane; in_col < pc.input_dim; in_col += HIDDEN_LANES) {
                 float chunk_sum = 0.0;
                 for (uint local_row = 0u; local_row < row_count; ++local_row) {
+                    // Do not multiply an absent row's zero adjoint by a NaN
+                    // hidden activation and poison the shared parameter sum.
+                    if (row_stats[(row_base + local_row) * 5u + 4u] == 0.0) {
+                        continue;
+                    }
                     uint row = row_base + local_row;
                     float normalized = (x[row * pc.input_dim + in_col] - chunk_mean[local_row])
                         * chunk_rstd[local_row];

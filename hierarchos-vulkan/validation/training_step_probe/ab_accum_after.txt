@@ -1,0 +1,131 @@
+target/prof_check/abprof2_after.log: 6 training step(s), 6608 dispatches and 85.836 ms GPU per step
+GPU span 99.352 ms/step = 85.836 ms of dispatch brackets + 13.516 ms (13.6%) that no bracket covers
+  that unattributed share is barrier flush, launch latency and idle between dispatches;
+  host time is wall clock minus the span, so `gpu_ms` alone understates a step
+
+category                           dispatches  gpu_ms/step   us/disp     pct
+rwkv.recurrent                           1152       31.709      27.5  36.94%
+normalization.layer-norm                  536       29.221      54.5  34.04%
+projection.linear                        1739       10.025       5.8  11.68%
+control                                   432        4.088       9.5   4.76%
+elementwise-reduction                    1328        3.710       2.8   4.32%
+optimizer.gradient-bookkeeping            898        3.125       3.5   3.64%
+loss.lm-projection                         24        1.484      61.8   1.73%
+token.embedding                           192        1.376       7.2   1.60%
+other                                     164        0.824       5.0   0.96%
+memory.rosa                                40        0.158       3.9   0.18%
+optimizer.adamw                            95        0.109       1.1   0.13%
+loss.cross-entropy                          8        0.008       1.0   0.01%
+                                                    85.836           100.00%  (category lines)
+
+shader                                                           category                     disp  gpu_ms/step   us/disp     pct  samples
+layer_norm_low_rank_producer_forward_fused                       normalization.layer-norm      144       15.589     108.3  18.16%        9
+packed_cell_channel_mix_state_forward_fused                      rwkv.recurrent                144        9.286      64.5  10.82%        9
+rwkv_time_mix3_linear3_key_state_forward_packed_fast             rwkv.recurrent                 96        7.470      77.8   8.70%        6
+layer_norm_adapter_forward_fused_512                             normalization.layer-norm      144        6.495      45.1   7.57%        9
+rwkv_matrix_state_backward_fused_rkv_add3                        rwkv.recurrent                 48        3.149      65.6   3.67%        3
+gradient_accumulate8                                             optimizer.gradient-bookkeeping    576        3.020       5.2   3.52%       34
+rwkv_time_mix3_linear3_key_state_forward_fused                   rwkv.recurrent                 48        2.913      60.7   3.39%        3
+linear_bias_forward                                              projection.linear             192        2.297      12.0   2.68%       12
+rwkv_group_norm_bonus_gate_linear_residual_forward_fused         rwkv.recurrent                144        2.253      15.6   2.62%        9
+layer_norm_backward_fused_add_residual                           normalization.layer-norm       48        2.199      45.8   2.56%        3
+layer_norm_input_grad                                            normalization.layer-norm       64        2.073      32.4   2.42%        4
+linear_input_grad                                                projection.linear             385        1.956       5.1   2.28%       23
+layer_norm_input_grad_residual_fused                             normalization.layer-norm       48        1.890      39.4   2.20%        3
+linear_weight_grad                                               projection.linear             385        1.764       4.6   2.06%       23
+drift_update_forward                                             control                        48        1.518      31.6   1.77%        3
+linear3_input_grad                                               projection.linear              48        1.448      30.2   1.69%        3
+rwkv_bonus_gate_backward                                         rwkv.recurrent                 48        1.335      27.8   1.56%        3
+rwkv_key_transform_backward                                      rwkv.recurrent                 48        1.289      26.8   1.50%        3
+bias_grad                                                        elementwise-reduction         240        1.282       5.3   1.49%       15
+parameter_matmul_weight_grad                                     projection.linear             288        1.276       4.4   1.49%       17
+linear_forward                                                   projection.linear             105        1.258      12.0   1.47%        7
+rwkv_time_mix3_backward                                          rwkv.recurrent                 96        1.213      12.6   1.41%        6
+drift_update_backward                                            control                        24        0.984      41.0   1.15%        2
+finite_clamp_backward                                            elementwise-reduction         144        0.843       5.9   0.98%        9
+rwkv_state_pack_backward_fused_add                               rwkv.recurrent                 48        0.802      16.7   0.93%        3
+embedding_forward                                                token.embedding               128        0.787       6.1   0.92%        8
+layer_norm_adapter_forward_fused_256                             normalization.layer-norm       16        0.782      48.9   0.91%        1
+vector_add                                                       elementwise-reduction         308        0.674       2.2   0.78%       19
+cross_entropy_linear_weight_grad_streaming                       loss.lm-projection              8        0.645      80.7   0.75%        1
+embedding_grad_accumulate                                        token.embedding                64        0.588       9.2   0.69%        4
+rwkv_channel_mix_backward                                        rwkv.recurrent                 48        0.561      11.7   0.65%        3
+cross_entropy_linear_row_stats_streaming                         loss.lm-projection              8        0.522      65.3   0.61%        1
+rwkv_state_unpack                                                rwkv.recurrent                 48        0.515      10.7   0.60%        3
+rwkv_key_transform_param_reduce                                  rwkv.recurrent                 48        0.512      10.7   0.60%        3
+finite_clamp_forward                                             elementwise-reduction         288        0.492       1.7   0.57%       17
+rwkv_group_norm_input_grad                                       rwkv.recurrent                 48        0.411       8.6   0.48%        3
+row_keep_forward                                                 control                        64        0.392       6.1   0.46%        4
+cross_entropy_linear_input_grad_streaming                        loss.lm-projection              8        0.316      39.6   0.37%        1
+worker_convergence                                               control                        32        0.316       9.9   0.37%        2
+indexed_step_gather                                              control                        32        0.298       9.3   0.35%        2
+ltm_gather_gate_backward_reduce                                  other                           8        0.239      29.9   0.28%        1
+commitment_accumulate                                            control                        32        0.186       5.8   0.22%        2
+layer_norm_stats                                                 normalization.layer-norm        8        0.184      23.0   0.21%        1
+ltm_topk                                                         other                          16        0.167      10.5   0.19%        1
+relu2_deepembed_backward                                         elementwise-reduction          48        0.155       3.2   0.18%        3
+row_keep_backward                                                control                        32        0.134       4.2   0.16%        2
+adamw                                                            optimizer.adamw                95        0.109       1.1   0.13%        6
+gradient_accumulate                                              optimizer.gradient-bookkeeping    226        0.105       0.5   0.12%       14
+ltm_similarity                                                   other                          16        0.088       5.5   0.10%        1
+context_lerp_concat_forward                                      control                        72        0.087       1.2   0.10%        5
+channel_reduce                                                   elementwise-reduction          48        0.084       1.7   0.10%        3
+rosa_gate_backward                                               memory.rosa                     8        0.083      10.4   0.10%        1
+tanh_backward                                                    elementwise-reduction          48        0.059       1.2   0.07%        3
+token_frontend_split_grad                                        other                           8        0.047       5.9   0.05%        1
+commitment_backward                                              control                        16        0.047       2.9   0.05%        1
+silu_backward                                                    elementwise-reduction          56        0.046       0.8   0.05%        4
+ltm_gather_gate                                                  other                          16        0.045       2.8   0.05%        1
+packed_state_slot_forward                                        other                          16        0.042       2.6   0.05%        1
+token_frontend_assemble                                          other                          16        0.041       2.6   0.05%        1
+concat_token_context                                             other                          16        0.039       2.5   0.05%        1
+ltm_gather_gate_backward                                         other                           8        0.039       4.8   0.04%        1
+rosa_gate_mix                                                    memory.rosa                    16        0.037       2.3   0.04%        1
+sigmoid_backward                                                 elementwise-reduction          96        0.034       0.4   0.04%        6
+commitment_finalize                                              control                        16        0.031       2.0   0.04%        1
+context_lerp_concat_backward                                     control                        24        0.030       1.3   0.04%        2
+hard_act_select                                                  control                        16        0.030       1.8   0.03%        1
+ltm_value_alignment_backward                                     other                           1        0.029      28.9   0.03%        1
+packed_state_slot_backward                                       other                          16        0.028       1.8   0.03%        1
+gelu_forward                                                     elementwise-reduction          16        0.027       1.7   0.03%        1
+parameter_matmul_input_grad                                      projection.linear             288        0.027       0.1   0.03%       17
+indexed_step_scatter_backward                                    control                        16        0.020       1.2   0.02%        1
+rosa_predict_bounded_lanes_subgroup_64                           memory.rosa                     8        0.019       2.4   0.02%        1
+rosa_gate_grad_reduce                                            memory.rosa                     8        0.018       2.3   0.02%        1
+hard_act_depth_backward                                          control                         8        0.016       2.0   0.02%        1
+gelu_backward                                                    elementwise-reduction           8        0.011       1.3   0.01%        1
+split_token_context_grad                                         other                           8        0.010       1.3   0.01%        1
+layer_norm_affine_clamp_backward_inplace                         normalization.layer-norm        8        0.009       1.1   0.01%        1
+cross_entropy_row_loss_extract                                   loss.cross-entropy              8        0.008       1.0   0.01%        1
+vector_add3                                                      elementwise-reduction          28        0.004       0.1   0.00%        2
+gradient_lassq_partials                                          other                           1        0.003       3.1   0.00%        1
+gradient_lassq_reduce                                            other                           1        0.003       2.9   0.00%        1
+ltm_alignment_control                                            other                           1        0.003       2.7   0.00%        1
+gradient_scale                                                   optimizer.gradient-bookkeeping     96        0.000       0.0   0.00%        6
+rwkv_decay_backward                                              rwkv.recurrent                 48        0.000       0.0   0.00%        3
+rwkv_state_unpack_vectors                                        rwkv.recurrent                 96        0.000       0.0   0.00%        6
+layer_norm_param_grad                                            normalization.layer-norm       56        0.000       0.0   0.00%        4
+rwkv_state_grad_pack                                             rwkv.recurrent                 48        0.000       0.0   0.00%        3
+rwkv_group_norm_param_grad                                       rwkv.recurrent                 48        0.000       0.0   0.00%        3
+linear3_weight_grad                                              projection.linear              48        0.000       0.0   0.00%        3
+ltm_similarity_query_grad                                        other                           8        0.000       0.0   0.00%        1
+ltm_similarity_key_grad                                          other                           8        0.000       0.0   0.00%        1
+listed 91 shader(s) covering 100.00% of the step; all 91 printed shader(s) cover 100.00% (the runtime prints the top 24 per submission)
+
+placement: does a dispatch pay for itself, or for the barrier before it?
+  both populations share a grid and therefore the same shape and push constants
+shader                                                     grid   cold us   warm us  cold-warm  cold n  warm n
+layer_norm_low_rank_producer_forward_fused               32x1x1   126.609    99.077     27.532       3       6
+layer_norm_adapter_forward_fused_512                     1x32x1    57.533    20.251     37.282       6       3
+embedding_grad_accumulate                                 8x2x1    11.790     6.600      5.190       2       2
+linear_forward                                            8x2x1     8.279     9.933     -1.655       5       1
+linear_bias_forward                                       1x2x1    10.607     2.009      8.598       3       3
+gradient_accumulate8                                    197x1x1     6.058     6.503     -0.445       3       5
+bias_grad                                                 1x1x1     8.737     0.297      8.440       9       5
+embedding_forward                                         8x2x1     1.127     6.867     -5.740       1       7
+linear_weight_grad                                        8x8x1     4.837     0.000      4.837       2       1
+context_lerp_concat_forward                               8x2x1     2.300     0.935      1.365       1       4
+gradient_accumulate                                      16x1x1     2.131     0.024      2.107       3       3
+finite_clamp_backward                                    16x1x1     1.236     0.473      0.762       3       2
+vector_add                                               16x1x1     1.124     0.209      0.915      11       6
+finite_clamp_forward                                     16x1x1     0.755     0.455      0.300       7       4

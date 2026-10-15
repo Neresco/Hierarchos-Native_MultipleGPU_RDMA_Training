@@ -6,7 +6,7 @@ layout(set = 0, binding = 0, std430) readonly buffer InputValues {
     float input_values[];
 };
 
-layout(set = 0, binding = 1, std430) buffer OutputValues {
+layout(set = 0, binding = 1, std430) writeonly buffer OutputValues {
     float output_values[];
 };
 

@@ -12,7 +12,7 @@ layout(push_constant) uniform Push {
     uint output_dim;
 } pc;
 
-void main() {
+void scalar_main() {
     uint out_col = gl_GlobalInvocationID.x;
     uint row = gl_GlobalInvocationID.y;
     if (row >= pc.rows || out_col >= pc.output_dim) {
@@ -29,4 +29,65 @@ void main() {
         );
     }
     output_values[row * pc.output_dim + out_col] = sum;
+}
+
+// A 16-row/output-column tile reuses each input and weight across 16 dot
+// products. Keep the scalar schedule for small/recurrent shapes, where barriers
+// cost more than the saved reads. Both schedules retain the original increasing
+// K FP32 FMA chain and the existing host dispatch geometry.
+const uint INPUT_TILE = 32u;
+shared float input_tile[16u * 33u];
+shared float weight_tile[INPUT_TILE * 17u];
+
+void main() {
+    if (pc.rows < 8u || pc.input_dim < 64u || pc.output_dim < 16u) {
+        scalar_main();
+        return;
+    }
+
+    uint local_x = gl_LocalInvocationID.x;
+    uint local_y = gl_LocalInvocationID.y;
+    uint out_col = gl_WorkGroupID.x * 16u + local_x;
+    uint row = gl_WorkGroupID.y * 16u + local_y;
+    bool lane_valid = row < pc.rows && out_col < pc.output_dim;
+    float sum = 0.0;
+
+    for (uint k_base = 0u; k_base < pc.input_dim; k_base += INPUT_TILE) {
+        uint load_k = k_base + local_x * 2u;
+        uint input_slot = local_y * 33u + local_x * 2u;
+        input_tile[input_slot] =
+            row < pc.rows && load_k < pc.input_dim
+                ? x[row * pc.input_dim + load_k] : 0.0;
+        input_tile[input_slot + 1u] =
+            row < pc.rows && load_k + 1u < pc.input_dim
+                ? x[row * pc.input_dim + load_k + 1u] : 0.0;
+
+        uint weight_k = k_base + local_y * 2u;
+        uint weight_slot = local_y * 2u * 17u + local_x;
+        weight_tile[weight_slot] =
+            out_col < pc.output_dim && weight_k < pc.input_dim
+                ? weight[weight_k * pc.output_dim + out_col]
+                : 0.0;
+        weight_tile[weight_slot + 17u] =
+            out_col < pc.output_dim && weight_k + 1u < pc.input_dim
+                ? weight[(weight_k + 1u) * pc.output_dim + out_col]
+                : 0.0;
+
+        // Padded/masked lanes participate in both barriers; they must never
+        // return before the rest of the workgroup has consumed the shared tile.
+        barrier();
+        if (lane_valid) {
+            uint count = min(INPUT_TILE, pc.input_dim - k_base);
+            for (uint k = 0u; k < count; ++k) {
+                sum = fma(input_tile[local_y * 33u + k],
+                          weight_tile[k * 17u + local_x], sum);
+            }
+        }
+        barrier();
+    }
+
+    if (lane_valid) {
+        uint output_index = row * pc.output_dim + out_col;
+        output_values[output_index] = sum;
+    }
 }

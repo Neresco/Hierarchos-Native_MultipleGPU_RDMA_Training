@@ -66,6 +66,17 @@ void main() {
         barrier();
 
         for (uint row = 0u; row < pc.rows; ++row) {
+            // Uniform across the workgroup; no barrier is skipped by only a
+            // subset of lanes. Preserve exact zeros without reading logits.
+            if (row_stats[row * 5u + 4u] == 0.0) {
+                if (pair_active) {
+                    grad_input[row * pc.input_dim + in_col] = 0.0;
+                    if (second_active) {
+                        grad_input[row * pc.input_dim + in_col + 1u] = 0.0;
+                    }
+                }
+                continue;
+            }
             uint logit_base = row * pc.output_dim + vocab_base;
             uint stats_base = row * 5u;
             float max_logit = row_stats[stats_base];

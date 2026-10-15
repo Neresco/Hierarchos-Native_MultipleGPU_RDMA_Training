@@ -79,30 +79,31 @@ void main() {
         return;
     }
     float dot = 0.0;
-    for (uint col = 0; col < pc.dim; ++col) {
-        float weighted_grad = grad_output[base + col] * (weight[parameter_base + col] + pc.weight_offset);
-        if (pc.pow_rstd != 0u || pc.unfused_products != 0u) {
+    if (pc.pow_rstd != 0u && pc.unfused_products == 2u) {
+        // Select the eight-lane topology before reading the row. Its
+        // result replaces the scalar dot, so a scalar prepass is wasted.
+        precise float lanes[8];
+        for (uint j = 0u; j < 8u; ++j) lanes[j] = 0.0;
+        for (uint col = 0u; col < pc.dim; ++col) {
+            precise float weighted_grad = grad_output[base + col]
+                * (weight[parameter_base + col] + pc.weight_offset);
             precise float product = weighted_grad * x[base + col];
-            dot += product;
-        } else {
-            dot = fma(weighted_grad, x[base + col], dot);
+            lanes[col & 7u] += product;
+        }
+        dot = 0.0;
+        for (uint j = 0u; j < 8u; ++j) dot += lanes[j];
+    } else {
+        for (uint col = 0; col < pc.dim; ++col) {
+            float weighted_grad = grad_output[base + col] * (weight[parameter_base + col] + pc.weight_offset);
+            if (pc.pow_rstd != 0u || pc.unfused_products != 0u) {
+                precise float product = weighted_grad * x[base + col];
+                dot += product;
+            } else {
+                dot = fma(weighted_grad, x[base + col], dot);
+            }
         }
     }
     if (pc.pow_rstd != 0u) {
-        // Mode 1 keeps the already-computed source-order dot. Mode 2 requests
-        // the explicit eight-lane reduction used by rsqrt families.
-        if (pc.unfused_products == 2u) {
-            precise float lanes[8];
-            for (uint j = 0u; j < 8u; ++j) lanes[j] = 0.0;
-            for (uint col = 0u; col < pc.dim; ++col) {
-                precise float weighted_grad = grad_output[base + col]
-                    * (weight[parameter_base + col] + pc.weight_offset);
-                precise float product = weighted_grad * x[base + col];
-                lanes[col & 7u] += product;
-            }
-            dot = 0.0;
-            for (uint j = 0u; j < 8u; ++j) dot += lanes[j];
-        }
         // Use the same independent pow derivative as ordinary RMS backward.
         // Reusing the rounded rstd changes the variance branch before the
         // residual joins, even when the forward output is bit-identical.

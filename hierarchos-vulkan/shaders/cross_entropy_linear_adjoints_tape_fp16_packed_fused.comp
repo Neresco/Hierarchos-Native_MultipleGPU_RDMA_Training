@@ -38,7 +38,7 @@ layout(set = 0, binding = 5, std430) readonly buffer LogitTapeBuffer { float log
 layout(set = 0, binding = 6, std430) readonly buffer StatsBuffer { float row_stats[]; };
 layout(set = 0, binding = 7, std430) readonly buffer WeightBuffer { uint weight_packed[]; };
 layout(set = 0, binding = 8, std430) buffer GradWeightBuffer { float grad_weight[]; };
-layout(set = 0, binding = 9, std430) buffer GradInputPartialBuffer { float grad_input_partials[]; };
+layout(set = 0, binding = 9, std430) writeonly buffer GradInputPartialBuffer { float grad_input_partials[]; };
 
 layout(push_constant) uniform Push {
     uint rows;
@@ -124,6 +124,10 @@ void main() {
         uint out_col = vocab_base + vocab_slot;
         for (uint row = 0u; row < pc.rows; ++row) {
             uint stats_base = row * 5u;
+            if (row_stats[stats_base + 4u] == 0.0) {
+                adjoint_window[row * VOCAB_TILE + vocab_slot] = 0.0;
+                continue;
+            }
             float max_logit = row_stats[stats_base];
             float inv_sum = row_stats[stats_base + 1u];
             uint target = floatBitsToUint(row_stats[stats_base + 2u]);
@@ -179,6 +183,9 @@ void main() {
             );
             vec2 dw = vec2(0.0);
             for (uint row = 0u; row < pc.rows; ++row) {
+                if (row_stats[row * 5u + 4u] == 0.0) {
+                    continue;
+                }
                 float grad = adjoint_window[row * VOCAB_TILE + vocab_slot];
                 dx_sum[row].x = fma(grad, weights.x, dx_sum[row].x);
                 if (second_active) {

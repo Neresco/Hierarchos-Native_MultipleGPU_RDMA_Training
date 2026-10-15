@@ -1,0 +1,11 @@
+
+PASS     cargo build (ladder binaries)  finished (release)
+PASS     binding-access audit           0 provably narrower binding(s) over 0 shader(s) out of 468 modules
+PASS     shader provenance              86 variant(s) match their sources and flags
+PASS     golden dense (matmul)          PASS: golden digests verified for 144 invocation(s) on AMD Radeon Graphics (0 unverified on another device)
+PASS     golden reduction               PASS: golden digests verified for 183 invocation(s) on AMD Radeon Graphics (0 unverified on another device)
+PASS     golden attention               PASS: golden digests verified for 79 invocation(s) on AMD Radeon Graphics (0 unverified on another device)
+PASS     training-step probe            6464 dispatches, 3076 barriers (upper bound 3076), loss 5.543217 on AMD Radeon Graphics
+PASS     training-state parity          PASS: 13 training steps, 3817 exact tensor digests
+
+8/8 step(s) passed

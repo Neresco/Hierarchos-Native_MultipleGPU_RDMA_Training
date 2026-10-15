@@ -1,12 +1,15 @@
 //! Architecture checks for Hierarchos only; no transformer implementation is used.
 //! Requires a Vulkan device. Run with --test-threads=1.
 use crate::{
-    AdamWHyperParams, HierarchosLabeledSequenceObjective, HierarchosRawTokenLabeledSequenceInput,
+    read_model_ltm_running_state, AdamWHyperParams, HierarchosLabeledSequenceObjective,
+    HierarchosLanguageLossSummary, HierarchosRawTokenLabeledSequenceInput,
     HierarchosTapeMemoryPolicy, HierarchosTokenTapeReadbackPolicy, HierarchosTokenTapeTrainResult,
     HierarchosTokenTapeUpdateMode, HierarchosTrainingGraph, RwkvParameterSnapshot, VulkanDevice,
 };
 use anyhow::Result;
-use hierarchos_inference::{initialize_model_package, HierarchosModel, NativeBootstrapConfig};
+use hierarchos_inference::{
+    initialize_model_package, HierarchosModel, NativeBootstrapConfig, RosaState,
+};
 use std::{
     fs,
     path::PathBuf,
@@ -561,6 +564,332 @@ fn dense_sparse_objective_equivalence() -> Result<()> {
             );
             eprintln!("PASS full objective dense/planned stride={stride}, TBPTT={chunk_size:?}");
         }
+    }
+    Ok(())
+}
+
+#[test]
+fn hierarchos_causal_lm_weighted_language_metric_matches_cpu() -> Result<()> {
+    with_trainer_stack(weighted_language_metric_matches_cpu)
+}
+
+fn weighted_language_metric_matches_cpu() -> Result<()> {
+    let path = fixture()?;
+    let device = VulkanDevice::new()?;
+    let model = HierarchosModel::load(&path)?;
+    let batch = 2;
+    let tokens = 5;
+    let label_cols = tokens + 1;
+    let ids = [1, 2, 1, 2, 3, 5, 6, 5, 0, 0];
+    let mask = [1., 1., 1., 1., 1., 1., 1., 1., 0., 0.];
+    let labels = [-100, -100, 1, 2, 3, 4, -100, -100, 5, -100, -100, -100];
+    // Ignored prompt labels deliberately retain positive weights. They must
+    // contribute neither numerator nor denominator; padded labels have zero.
+    let weights = [11., 7., 0.5, 2., 0.25, 1.5, 13., 17., 3.25, 0., 0., 0.];
+    let contexts = vec![0.; batch * 32];
+    let obj = HierarchosLabeledSequenceObjective {
+        z_loss_weight: 0.01,
+        ponder_loss_weight: 0.02,
+        commitment_loss_weight: 0.03,
+        // The metric describes CE plus z-loss before this backward-only cap,
+        // and excludes the independently normalized auxiliary objectives.
+        max_ce_loss_for_backward: 0.1,
+        ..objective()
+    };
+    let input = HierarchosRawTokenLabeledSequenceInput {
+        tokens,
+        input_ids: &ids,
+        labels: &labels,
+        attention_mask: Some(&mask),
+        loss_weights: Some(&weights),
+        initial_previous_context: &contexts,
+        initial_target_context: &contexts,
+        global_pos_offset: 0,
+        reset_rosa_at_start: true,
+        pytorch_tbptt_chunk_size: Some(2),
+    };
+
+    let mut expected_sum = 0.0f64;
+    let mut expected_mass = 0.0f64;
+    for row in 0..batch {
+        let real_tokens = mask[row * tokens..(row + 1) * tokens]
+            .iter()
+            .filter(|&&active| active != 0.)
+            .count();
+        let mut state = model.new_state();
+        let logits = model.prefill(&ids[row * tokens..row * tokens + real_tokens], &mut state)?;
+        for (token_index, logits) in logits.iter().enumerate() {
+            let label_index = row * label_cols + token_index + 1;
+            let target = labels[label_index];
+            if target == -100 || weights[label_index] == 0. {
+                continue;
+            }
+            let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let log_z = max
+                + logits
+                    .iter()
+                    .map(|value| (value - max).exp())
+                    .sum::<f32>()
+                    .ln();
+            let language_loss = log_z - logits[target as usize] + obj.z_loss_weight * log_z * log_z;
+            expected_sum += f64::from(language_loss) * f64::from(weights[label_index]);
+            expected_mass += f64::from(weights[label_index]);
+        }
+    }
+    assert_eq!(expected_mass, 7.5);
+    let expected_mean = expected_sum / expected_mass;
+    assert!(expected_mean > f64::from(obj.max_ce_loss_for_backward));
+
+    let mut dense = graph(&device, &path, batch)?;
+    let mut tape = dense.create_zero_token_tape(batch, tokens)?;
+    let result = dense.train_raw_token_labeled_sequence_with_update_mode(
+        &mut tape,
+        &input,
+        obj,
+        hyper(),
+        HierarchosTokenTapeUpdateMode::BeginAccumulation,
+    )?;
+    assert_eq!(result.language_loss.supervision_mass, expected_mass);
+    assert!(
+        (result.language_loss.weighted_sum - expected_sum).abs() < 2e-4,
+        "CPU/Vulkan weighted language numerator: expected {expected_sum}, got {:?}",
+        result.language_loss,
+    );
+    assert!((result.language_loss.mean().unwrap() - expected_mean).abs() < 2e-5);
+    let diagnostic_mean = result
+        .losses
+        .iter()
+        .map(|&loss| f64::from(loss))
+        .sum::<f64>()
+        / result.losses.len() as f64;
+    assert!(
+        (diagnostic_mean - expected_mean).abs() > 1e-4,
+        "the fixture must distinguish the weighted language metric from its all-row diagnostic mean",
+    );
+
+    let mut merged = HierarchosLanguageLossSummary::default();
+    let mut independent_means = Vec::new();
+    for row in 0..batch {
+        let mut independent = graph(&device, &path, 1)?;
+        let actual = run(
+            &mut independent,
+            1,
+            &ids[row * tokens..(row + 1) * tokens],
+            &labels[row * label_cols..(row + 1) * label_cols],
+            Some(&mask[row * tokens..(row + 1) * tokens]),
+            Some(&weights[row * label_cols..(row + 1) * label_cols]),
+            obj,
+            HierarchosTokenTapeUpdateMode::BeginAccumulation,
+        )?;
+        independent_means.push(actual.language_loss.mean().unwrap());
+        merged.merge(actual.language_loss);
+    }
+    assert_eq!(merged.supervision_mass, expected_mass);
+    assert!((merged.weighted_sum - result.language_loss.weighted_sum).abs() < 2e-6);
+    assert!((merged.mean().unwrap() - expected_mean).abs() < 2e-5);
+    let mean_of_means = independent_means.iter().sum::<f64>() / batch as f64;
+    assert!(
+        (merged.mean().unwrap() - mean_of_means).abs() > 1e-6,
+        "unequal supervision masses must distinguish merged metrics from a mean of means",
+    );
+
+    for stride in [1, 3] {
+        let mut planned = graph(&device, &path, batch)?;
+        let actual = planned
+            .train_zero_state_raw_token_labeled_sequences_with_plan_and_update_mode(
+                batch,
+                &[HierarchosRawTokenLabeledSequenceInput { ..input }],
+                obj,
+                hyper(),
+                HierarchosTokenTapeUpdateMode::BeginAccumulation,
+                1,
+                stride,
+                HierarchosTapeMemoryPolicy::default(),
+                HierarchosTokenTapeReadbackPolicy::LossOnly,
+            )?;
+        let actual = &actual.sequences[0];
+        close(
+            &actual.losses,
+            &result.losses,
+            2e-7,
+            "weighted metric dense/planned diagnostics",
+        );
+        assert_eq!(actual.language_loss.supervision_mass, expected_mass);
+        assert!(
+            (actual.language_loss.weighted_sum - result.language_loss.weighted_sum).abs() < 2e-6,
+            "weighted metric dense/planned numerator differs at stride {stride}",
+        );
+        assert!((actual.language_loss.mean().unwrap() - expected_mean).abs() < 2e-5);
+    }
+    eprintln!(
+        "PASS weighted CPU/Vulkan language metric: sum={expected_sum}, mass={expected_mass}, \
+         mean={expected_mean}, diagnostic mean={diagnostic_mean}"
+    );
+    Ok(())
+}
+
+#[test]
+fn hierarchos_causal_lm_continuation_matches_cpu_across_manager_and_rosa_boundaries() -> Result<()>
+{
+    with_trainer_stack(continuation_matches_cpu_across_manager_and_rosa_boundaries)
+}
+
+fn continuation_matches_cpu_across_manager_and_rosa_boundaries() -> Result<()> {
+    let path = fixture()?;
+    let device = VulkanDevice::new()?;
+    let model = HierarchosModel::load(&path)?;
+    let prefix = [1, 2, 1, 2, 1, 2, 1];
+    let ids = [2, 1, 2, 1, 2, 3];
+    // One extra label supervises the last input token at a TBPTT handoff.
+    let labels = [-100, 1, 2, 1, 2, 3, 4];
+    let mut cpu_state = model.new_state();
+    model.prefill(&prefix, &mut cpu_state)?;
+    let initial = model.snapshot_runtime_state(&cpu_state)?;
+    for (name, values) in [
+        ("H", &initial.h_state.values),
+        ("L", &initial.l_state.values),
+        ("previous context", &initial.prev_context),
+        ("target context", &initial.target_context),
+    ] {
+        assert!(
+            values.iter().any(|value| value.abs() > 1e-8),
+            "zero {name} seed"
+        );
+    }
+    assert_ne!(initial.prev_context, initial.target_context);
+    assert_eq!(initial.position % 2, 1, "resume between manager updates");
+    assert_eq!(
+        initial.rosa.tokens.len(),
+        7,
+        "resume immediately before ROSA rollover"
+    );
+
+    let logits = model.prefill(&ids, &mut cpu_state)?;
+    let expected = logits
+        .iter()
+        .enumerate()
+        .map(|(t, row)| {
+            let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            max + row
+                .iter()
+                .map(|value| (value - max).exp())
+                .sum::<f32>()
+                .ln()
+                - row[labels[t + 1] as usize]
+        })
+        .collect::<Vec<_>>();
+    let final_cpu = model.snapshot_runtime_state(&cpu_state)?;
+    let mut rosa = RosaState::from_snapshot(&initial.rosa)?;
+    let expected_predictions = ids
+        .iter()
+        .map(|&id| vec![rosa.predict_and_push(id, 8).map_or(-1, i64::from)])
+        .collect::<Vec<_>>();
+    assert_eq!(expected_predictions[0], vec![1]);
+    assert_eq!(expected_predictions[1], vec![-1], "ROSA resets at its cap");
+
+    for chunk_size in [None, Some(2)] {
+        let input = HierarchosRawTokenLabeledSequenceInput {
+            tokens: ids.len(),
+            input_ids: &ids,
+            labels: &labels,
+            attention_mask: None,
+            loss_weights: None,
+            initial_previous_context: &initial.prev_context,
+            initial_target_context: &initial.target_context,
+            global_pos_offset: initial.position as u64,
+            reset_rosa_at_start: false,
+            pytorch_tbptt_chunk_size: chunk_size,
+        };
+        let mut dense = graph(&device, &path, 1)?;
+        let mut carriers = dense.snapshot_portable_running_carriers(
+            1,
+            &initial.h_state.values,
+            &initial.l_state.values,
+            &initial.prev_context,
+            &initial.target_context,
+            read_model_ltm_running_state(&path.join("model.safetensors"))?,
+        )?;
+        carriers.rosa_token_histories = vec![initial.rosa.tokens.clone()];
+        carriers.drift_state.values.clone_from(&initial.final_drift);
+        dense.restore_portable_running_carriers(1, &carriers)?;
+        let mut tape = dense.create_token_tape(
+            1,
+            ids.len(),
+            &initial.h_state.values,
+            &initial.l_state.values,
+        )?;
+        let result = dense.train_raw_token_labeled_sequence_with_update_mode(
+            &mut tape,
+            &input,
+            objective(),
+            hyper(),
+            HierarchosTokenTapeUpdateMode::BeginAccumulation,
+        )?;
+        close(
+            &result.losses,
+            &expected,
+            2e-5,
+            "continued CPU/Vulkan shifted CE",
+        );
+        close(
+            &result.final_h_packed_state,
+            &final_cpu.h_state.values,
+            2e-5,
+            "continued CPU/Vulkan H state",
+        );
+        close(
+            &result.final_l_packed_state,
+            &final_cpu.l_state.values,
+            2e-5,
+            "continued CPU/Vulkan L state",
+        );
+        close(
+            result.final_previous_context.as_ref().unwrap(),
+            &final_cpu.prev_context,
+            2e-5,
+            "continued CPU/Vulkan previous context",
+        );
+        close(
+            result.final_target_context.as_ref().unwrap(),
+            &final_cpu.target_context,
+            2e-5,
+            "continued CPU/Vulkan target context",
+        );
+        assert_eq!(tape.rosa_prediction_checkpoints()?, expected_predictions);
+        assert_eq!(
+            dense.snapshot_portable_frontend_state(1)?.1,
+            vec![final_cpu.rosa.tokens.clone()],
+        );
+        // Planned tapes represent independent samples. Their API rejects a
+        // persistent ROSA continuation before changing parameters or carriers.
+        let mut planned = graph(&device, &path, 1)?;
+        planned.restore_portable_running_carriers(1, &carriers)?;
+        let before_parameters = planned.full_model_parameter_snapshots()?;
+        let before_frontend = planned.snapshot_portable_frontend_state(1)?;
+        let error = planned
+            .train_raw_token_labeled_sequences_with_plan_and_update_mode_and_readback_policy(
+                1,
+                &[&initial.h_state.values],
+                &[&initial.l_state.values],
+                &[input],
+                objective(),
+                hyper(),
+                HierarchosTokenTapeUpdateMode::BeginAccumulation,
+                1,
+                3,
+                HierarchosTapeMemoryPolicy::default(),
+                HierarchosTokenTapeReadbackPolicy::Full,
+            )
+            .err()
+            .expect("independent planned sequences must reject ROSA continuation");
+        assert!(error.to_string().contains("must reset ROSA at token zero"));
+        close_registry(
+            &before_parameters,
+            &planned.full_model_parameter_snapshots()?,
+            0.,
+        );
+        assert_eq!(planned.snapshot_portable_frontend_state(1)?, before_frontend);
+        eprintln!("PASS CPU/Vulkan continuation, manager/ROSA rollover, planned continuation rejection, TBPTT={chunk_size:?}");
     }
     Ok(())
 }

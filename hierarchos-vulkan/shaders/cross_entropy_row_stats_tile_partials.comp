@@ -91,6 +91,7 @@ void main() {
         row_stats[stats_base] = max_logit;
         row_stats[stats_base + 1u] = 1.0 / exp_sum;
         row_stats[stats_base + 2u] = uintBitsToFloat(target);
-        row_stats[stats_base + 3u] = log(exp_sum) + max_logit - target_logit_shared;
+        precise float ce_loss = log(exp_sum) - (target_logit_shared - max_logit);
+        row_stats[stats_base + 3u] = ce_loss;
     }
 }

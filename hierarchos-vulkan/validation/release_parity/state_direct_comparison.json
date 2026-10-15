@@ -1,0 +1,59 @@
+[
+  {
+    "case": "batch2",
+    "args": [
+      "--batch",
+      "2",
+      "--tokens",
+      "8",
+      "--warmup",
+      "0",
+      "--steps",
+      "6"
+    ],
+    "steps": 6,
+    "tensor_comparisons": 1752,
+    "mismatches": [],
+    "pass": true
+  },
+  {
+    "case": "batch32",
+    "args": [
+      "--batch",
+      "32",
+      "--tokens",
+      "8",
+      "--warmup",
+      "0",
+      "--steps",
+      "4"
+    ],
+    "steps": 4,
+    "tensor_comparisons": 1168,
+    "mismatches": [],
+    "pass": true
+  },
+  {
+    "case": "odd_multi_sequence",
+    "args": [
+      "--batch",
+      "9",
+      "--tokens",
+      "3",
+      "--sequences",
+      "2",
+      "--hidden",
+      "256",
+      "--context-dim",
+      "256",
+      "--warmup",
+      "0",
+      "--steps",
+      "3"
+    ],
+    "steps": 3,
+    "tensor_comparisons": 897,
+    "mismatches": [],
+    "pass": true
+  }
+]

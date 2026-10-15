@@ -1,0 +1,3 @@
+parity mode0_feature0 backward=false different=0 max_abs=0.000000000
+parity mode0_feature0 backward=true different=1 max_abs=0.000000000
+Error: mode0_feature0 backward=true: 1 outputs are not bit-identical

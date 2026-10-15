@@ -44,7 +44,7 @@ float accumulate_backward_product(float sum, float grad, float weight) {
 #endif
 }
 
-void main() {
+void scalar_main() {
     uint in_col = gl_GlobalInvocationID.x;
     uint row = gl_GlobalInvocationID.y;
     if (row >= pc.rows || in_col >= pc.input_dim) {
@@ -71,4 +71,61 @@ void main() {
         }
     }
     grad_input[row * pc.input_dim + in_col] = sum;
+}
+
+// Share each adjoint and weight tile across the 16 x 16 output block while
+// preserving increasing-output-column accumulation and native-FP16 products.
+const uint GRAD_TILE = 32u;
+shared float grad_tile[16u * 33u];
+shared float weight_tile[GRAD_TILE * 17u];
+
+void main() {
+    if (pc.rows < 8u || pc.output_dim < 64u || pc.input_dim < 16u) {
+        scalar_main();
+        return;
+    }
+    uint local_x = gl_LocalInvocationID.x;
+    uint local_y = gl_LocalInvocationID.y;
+    uint in_col = gl_WorkGroupID.x * 16u + local_x;
+    uint row = gl_WorkGroupID.y * 16u + local_y;
+    bool lane_valid = row < pc.rows && in_col < pc.input_dim;
+    float sum = 0.0;
+
+    for (uint k_base = 0u; k_base < pc.output_dim; k_base += GRAD_TILE) {
+        uint load_k = k_base + local_x * 2u;
+        uint grad_slot = local_y * 33u + local_x * 2u;
+        grad_tile[grad_slot] =
+            row < pc.rows && load_k < pc.output_dim
+                ? grad_output[row * pc.output_dim + load_k] : 0.0;
+        grad_tile[grad_slot + 1u] =
+            row < pc.rows && load_k + 1u < pc.output_dim
+                ? grad_output[row * pc.output_dim + load_k + 1u] : 0.0;
+
+        uint weight_col = gl_WorkGroupID.x * 16u + local_y;
+        uint weight_slot = local_x * 2u * 17u + local_y;
+        vec2 weights = vec2(0.0);
+        if (weight_col < pc.input_dim && load_k < pc.output_dim) {
+            weights = load_weight_pair(
+                weight_col * pc.output_dim + load_k,
+                load_k + 1u < pc.output_dim
+            );
+        }
+        weight_tile[weight_slot] = weights.x;
+        weight_tile[weight_slot + 17u] = weights.y;
+
+        barrier();
+        if (lane_valid) {
+            uint count = min(GRAD_TILE, pc.output_dim - k_base);
+            for (uint k = 0u; k < count; ++k) {
+                sum = accumulate_backward_product(sum,
+                    grad_tile[local_y * 33u + k],
+                    weight_tile[k * 17u + local_x]
+                );
+            }
+        }
+        barrier();
+    }
+    if (lane_valid) {
+        grad_input[row * pc.input_dim + in_col] = sum;
+    }
 }

@@ -20,7 +20,7 @@ use hierarchos_vulkan::{
     HierarchosBudgetedTokenTapeTrainResult, HierarchosDataStreamCursorState,
     HierarchosExecutionPolicyState, HierarchosFullModelReplicaTransportSource,
     HierarchosJointTrainingAdapterConstraint, HierarchosLabeledSequenceObjective,
-    HierarchosLearningRateScheduleState, HierarchosLossScalingState,
+    HierarchosLanguageLossSummary, HierarchosLearningRateScheduleState, HierarchosLossScalingState,
     HierarchosPendingGradientTransportSource, HierarchosPortableLtmRunningState,
     HierarchosPortableReplayTensor, HierarchosPortableRunningCarriers,
     HierarchosPortableTrainingReplay, HierarchosRawTokenLabeledSequenceInput,
@@ -125,16 +125,14 @@ fn emit_gui_event(enabled: bool, event: serde_json::Value) {
     }
 }
 
-fn finite_mean(values: &[f32]) -> Option<f64> {
-    let mut total = 0.0f64;
-    let mut count = 0u64;
-    for &value in values {
-        if value.is_finite() {
-            total += f64::from(value);
-            count += 1;
-        }
+fn summarize_language_loss(
+    sequences: &[hierarchos_vulkan::HierarchosTokenTapeTrainResult],
+) -> HierarchosLanguageLossSummary {
+    let mut summary = HierarchosLanguageLossSummary::default();
+    for sequence in sequences {
+        summary.merge(sequence.language_loss);
     }
-    (count > 0).then_some(total / count as f64)
+    summary
 }
 
 #[derive(Debug)]
@@ -376,7 +374,15 @@ fn parse_args() -> Result<Args> {
     let mut joint_runtime_profile = None;
     let mut lock_joint_runtime_profile = false;
     let mut epochs = 1u64;
-    let mut batch_size = 1usize;
+    // One step is ~7000 dispatches, and the host pays ~10 us per dispatch before the
+    // GPU sees any of them, so a one-row step spends roughly half its wall time
+    // recording dispatches that are individually almost empty. Rows per step are the
+    // only lever that amortizes that cost, because `--gradient-accumulation-steps`
+    // replays the whole graph once per micro-batch and so pays the same per-dispatch
+    // price. `validation/sweep_step_tokens.py` measures the curve: the default is at
+    // its knee (see the numbers in the --help text below and in
+    // PROGRESS_HIERARCHOS_VULKAN_TRAINING_OPTIMIZATIONS.md).
+    let mut batch_size = 32usize;
     let mut gradient_accumulation_steps = 1usize;
     let mut learning_rate = 1.0e-4f32;
     let mut min_learning_rate = 0.0f32;
@@ -590,6 +596,14 @@ fn parse_args() -> Result<Args> {
                      contiguously by token workload, then reduced in logical order on the first adapter.\n\
                      --gradient-stream-chunk-values bounds the FP32 values resident in each cross-adapter \
                      staging window; larger chunks reduce queue submissions at the cost of bounded host-visible memory.\n\
+                     --batch-size defaults to 32 rows per step because that is where the measured \
+                     throughput curve knees. A step is ~7000 dispatches at a nearly fixed per-dispatch \
+                     host cost, so rows per step are the only lever that amortizes it; \
+                     --gradient-accumulation-steps replays the whole graph per micro-batch and does not. \
+                     Measured on one AMD Radeon, release, 8-token rows: 2 rows = 102 tokens/s, 8 = 390, \
+                     32 = 1278, 128 = 2039, 256 = 2202, 512 = 2660. Past the knee a step is GPU-bound, \
+                     so a larger batch buys throughput, not latency. `--batch-size 1` is the harness \
+                     default, not the training default.\n\
                      --joint-runtime-profile replays a separately collected multi-device scheduler profile only when \
                      its architecture, batch/token geometry, ordered device+driver UUIDs, and transport backends exactly match.\n\
                      --lock-joint-runtime-profile freezes transport width, optimizer/broadcast overlap, and tape geometry \
@@ -1685,8 +1699,14 @@ fn pack_batch(rows: &[&DatasetRow], vocab_size: usize) -> Result<PackedBatch> {
             .context("validated row is missing labels")?;
         anyhow::ensure!(
             labels_row.len() == row.input_ids.len()
-                && row.attention_mask.as_ref().is_none_or(|v| v.len() == row.input_ids.len())
-                && row.loss_weights.as_ref().is_none_or(|v| v.len() == row.input_ids.len()),
+                && row
+                    .attention_mask
+                    .as_ref()
+                    .is_none_or(|v| v.len() == row.input_ids.len())
+                && row
+                    .loss_weights
+                    .as_ref()
+                    .is_none_or(|v| v.len() == row.input_ids.len()),
             "batch row {row_index} labels/masks/weights must match input_ids"
         );
         let mut saw_padding = false;
@@ -2386,7 +2406,7 @@ struct BudgetedWindowTrainSummary {
     queue_submissions: u64,
     optimizer_wavefront_windows: usize,
     optimizer_wavefront_ranges: usize,
-    losses: Vec<f32>,
+    language_loss: HierarchosLanguageLossSummary,
     gradient_reductions: usize,
     replica_broadcasts: usize,
     replica_broadcast_compute_handoffs: usize,
@@ -5545,11 +5565,7 @@ fn train_budgeted_window(
             optimizer_boundary_service_seconds: optimizer_boundary_started.elapsed().as_secs_f64(),
         };
         let optimizer_wavefront_windows = usize::from(optimizer_wavefront_ranges != 0);
-        let losses = result
-            .sequences
-            .into_iter()
-            .flat_map(|sequence| sequence.losses)
-            .collect::<Vec<_>>();
+        let language_loss = summarize_language_loss(&result.sequences);
         launch_replica_state_broadcast(
             primary,
             replica_pool,
@@ -5573,7 +5589,7 @@ fn train_budgeted_window(
             queue_submissions,
             optimizer_wavefront_windows,
             optimizer_wavefront_ranges,
-            losses,
+            language_loss,
             gradient_reductions: 0,
             replica_broadcasts: replica_count,
             replica_broadcast_compute_handoffs: 0,
@@ -5703,11 +5719,7 @@ fn train_budgeted_window(
         device_local_usage_ratio,
         device_local_pressure_bucket,
     }];
-    let mut losses = primary_result
-        .sequences
-        .into_iter()
-        .flat_map(|sequence| sequence.losses)
-        .collect::<Vec<_>>();
+    let mut language_loss = summarize_language_loss(&primary_result.sequences);
     let mut gradient_stream_chunks = 0usize;
     let mut gradient_stream_values = 0usize;
     let mut gradient_stream_pipeline_slots = 0usize;
@@ -5758,12 +5770,7 @@ fn train_budgeted_window(
             queue_submissions = queue_submissions
                 .checked_add(u64::from(result.queue_submissions))
                 .context("multi-device queue-submission count overflow")?;
-            losses.extend(
-                result
-                    .sequences
-                    .into_iter()
-                    .flat_map(|sequence| sequence.losses),
-            );
+            language_loss.merge(summarize_language_loss(&result.sequences));
 
             let gradient_reduction_started = Instant::now();
             let stream = primary.accumulate_full_model_pending_gradients_streamed_from_source(
@@ -5872,7 +5879,7 @@ fn train_budgeted_window(
         queue_submissions,
         optimizer_wavefront_windows,
         optimizer_wavefront_ranges,
-        losses,
+        language_loss,
         gradient_reductions: window_replica_count,
         replica_broadcasts: replica_count,
         replica_broadcast_compute_handoffs,
@@ -5937,11 +5944,7 @@ fn train_budgeted_window_scoped_legacy(
             .checked_add(1)
             .and_then(|count| count.checked_add(retired_broadcast.queue_submissions))
             .context("single-shard pipelined submission count overflow")?;
-        let losses = result
-            .sequences
-            .into_iter()
-            .flat_map(|sequence| sequence.losses)
-            .collect::<Vec<_>>();
+        let language_loss = summarize_language_loss(&result.sequences);
         launch_replica_state_broadcast(
             primary,
             broadcast_pool,
@@ -5954,7 +5957,7 @@ fn train_budgeted_window_scoped_legacy(
         return Ok(BudgetedWindowTrainSummary {
             optimizer_step: optimizer.step,
             queue_submissions,
-            losses,
+            language_loss,
             gradient_reductions: 0,
             replica_broadcasts: replica_count,
             replica_broadcast_compute_handoffs: 0,
@@ -6264,11 +6267,7 @@ fn train_budgeted_window_scoped_legacy(
         returned_replicas[replica_index] = Some(replica);
     }
     let mut queue_submissions = u64::from(primary_result.queue_submissions);
-    let mut losses = primary_result
-        .sequences
-        .into_iter()
-        .flat_map(|sequence| sequence.losses)
-        .collect::<Vec<_>>();
+    let mut language_loss = summarize_language_loss(&primary_result.sequences);
     let mut gradient_stream_chunks = 0usize;
     let mut gradient_stream_values = 0usize;
     let mut gradient_stream_pipeline_slots = 0usize;
@@ -6286,12 +6285,7 @@ fn train_budgeted_window_scoped_legacy(
         queue_submissions = queue_submissions
             .checked_add(u64::from(result.queue_submissions))
             .context("multi-device queue-submission count overflow")?;
-        losses.extend(
-            result
-                .sequences
-                .into_iter()
-                .flat_map(|sequence| sequence.losses),
-        );
+        language_loss.merge(summarize_language_loss(&result.sequences));
         gradient_stream_backends.insert(stream.backend);
         gradient_stream_chunks = gradient_stream_chunks
             .checked_add(stream.chunk_count)
@@ -6349,7 +6343,7 @@ fn train_budgeted_window_scoped_legacy(
     Ok(BudgetedWindowTrainSummary {
         optimizer_step: optimizer.step,
         queue_submissions,
-        losses,
+        language_loss,
         gradient_reductions: active_replica_count,
         replica_broadcasts: replica_count,
         replica_broadcast_compute_handoffs,
@@ -7237,8 +7231,7 @@ fn run() -> Result<()> {
     let mut peak_replica_state_stream_device_bytes = 0usize;
     let mut observed_replica_state_stream_backends = HashSet::new();
     let mut total_replica_state_host_fallbacks = 0u64;
-    let mut epoch_loss_sum = 0.0f64;
-    let mut epoch_loss_values = 0usize;
+    let mut epoch_language_loss = HierarchosLanguageLossSummary::default();
     let start_epoch = cursor.epoch;
 
     while cursor.epoch < args.epochs {
@@ -7414,7 +7407,7 @@ fn run() -> Result<()> {
                     .checked_add(sequence_tokens.saturating_mul(batch_tokens))
                     .context("native runtime token counter overflow")
             })?;
-            let window_mean_loss = finite_mean(&result.losses);
+            let window_mean_loss = result.language_loss.mean();
             if let (Some(arm_index), Some(latency_before)) =
                 (runtime_arm_index, runtime_latency_before)
             {
@@ -7578,10 +7571,7 @@ fn run() -> Result<()> {
                     "dynamic loss scaler rejected a non-finite optimizer window",
                 )?;
             }
-            for loss in result.losses.into_iter().filter(|value| value.is_finite()) {
-                epoch_loss_sum += f64::from(loss);
-                epoch_loss_values += 1;
-            }
+            epoch_language_loss.merge(result.language_loss);
             let completed_batch_number = batch_index + window_batch_count;
             let completed_global_step = epoch
                 .saturating_mul(u64::try_from(full_batch_count).unwrap_or(u64::MAX))
@@ -7597,6 +7587,8 @@ fn run() -> Result<()> {
                     "optimizer_step": optimizer_step,
                     "loss": window_mean_loss.unwrap_or(0.0),
                     "loss_available": window_mean_loss.is_some(),
+                    "loss_kind": "weighted_ce_plus_z_loss",
+                    "supervision_mass": result.language_loss.supervision_mass,
                     "lr": live_lr,
                     "tokens_per_sec": if runtime_elapsed_seconds > 0.0 {
                         runtime_total_tokens as f64 / runtime_elapsed_seconds
@@ -7656,13 +7648,9 @@ fn run() -> Result<()> {
                 );
             }
             if cursor.epoch != epoch {
-                let mean_loss = if epoch_loss_values == 0 {
-                    f64::NAN
-                } else {
-                    epoch_loss_sum / epoch_loss_values as f64
-                };
+                let mean_loss = epoch_language_loss.mean().unwrap_or(f64::NAN);
                 eprintln!(
-                    "epoch {}/{}: batches={} optimizer_step={} live_lr={:.8e} mean_recorded_loss={:.6}",
+                    "epoch {}/{}: batches={} optimizer_step={} live_lr={:.8e} weighted_language_loss={:.6}",
                     epoch + 1,
                     args.epochs,
                     full_batch_count,
@@ -7670,8 +7658,7 @@ fn run() -> Result<()> {
                     schedule_live_lr(&schedule, args.learning_rate)?,
                     mean_loss,
                 );
-                epoch_loss_sum = 0.0;
-                epoch_loss_values = 0;
+                epoch_language_loss = HierarchosLanguageLossSummary::default();
                 carried_h_state = None;
                 carried_l_state = None;
                 previous_context.fill(0.0);
@@ -7779,7 +7766,7 @@ fn run() -> Result<()> {
             )
         })?;
         let batch_elapsed_seconds = batch_started.elapsed().as_secs_f64();
-        let batch_mean_loss = finite_mean(&result.losses);
+        let batch_mean_loss = result.language_loss.mean();
         total_queue_submissions = total_queue_submissions
             .checked_add(u64::from(result.queue_submissions))
             .context("native per-batch queue-submission counter overflow")?;
@@ -7854,10 +7841,7 @@ fn run() -> Result<()> {
                 ))
                 .context("periodic checkpoint metadata submission counter overflow")?;
         }
-        for loss in result.losses.into_iter().filter(|value| value.is_finite()) {
-            epoch_loss_sum += f64::from(loss);
-            epoch_loss_values += 1;
-        }
+        epoch_language_loss.merge(result.language_loss);
         if args.persist_state {
             carried_h_state = Some(result.final_h_packed_state);
             carried_l_state = Some(result.final_l_packed_state);
@@ -7886,6 +7870,8 @@ fn run() -> Result<()> {
                 "optimizer_step": optimizer_step,
                 "loss": batch_mean_loss.unwrap_or(0.0),
                 "loss_available": batch_mean_loss.is_some(),
+                "loss_kind": "weighted_ce_plus_z_loss",
+                "supervision_mass": result.language_loss.supervision_mass,
                 "lr": live_lr,
                 "tokens_per_sec": if batch_elapsed_seconds > 0.0 {
                     batch_total_tokens as f64 / batch_elapsed_seconds
@@ -7932,13 +7918,9 @@ fn run() -> Result<()> {
             );
         }
         if rolled_epoch {
-            let mean_loss = if epoch_loss_values == 0 {
-                f64::NAN
-            } else {
-                epoch_loss_sum / epoch_loss_values as f64
-            };
+            let mean_loss = epoch_language_loss.mean().unwrap_or(f64::NAN);
             eprintln!(
-                "epoch {}/{}: batches={} optimizer_step={} live_lr={:.8e} mean_recorded_loss={:.6}",
+                "epoch {}/{}: batches={} optimizer_step={} live_lr={:.8e} weighted_language_loss={:.6}",
                 epoch + 1,
                 args.epochs,
                 full_batch_count,
@@ -7946,8 +7928,7 @@ fn run() -> Result<()> {
                 schedule_live_lr(&schedule, args.learning_rate)?,
                 mean_loss,
             );
-            epoch_loss_sum = 0.0;
-            epoch_loss_values = 0;
+            epoch_language_loss = HierarchosLanguageLossSummary::default();
             carried_h_state = None;
             carried_l_state = None;
             previous_context.fill(0.0);
@@ -8896,7 +8877,12 @@ mod tests {
 
     #[test]
     fn packed_rows_reject_invalid_mask_geometry() {
-        for mask in [vec![1.0, 0.5, 0.0], vec![1.0, 0.0, 1.0], vec![0.0, 1.0, 1.0], vec![1.0]] {
+        for mask in [
+            vec![1.0, 0.5, 0.0],
+            vec![1.0, 0.0, 1.0],
+            vec![0.0, 1.0, 1.0],
+            vec![1.0],
+        ] {
             let mut sample = row(&[1, 2, 3]);
             sample.attention_mask = Some(mask);
             assert!(pack_batch(&[&sample], 8).is_err());

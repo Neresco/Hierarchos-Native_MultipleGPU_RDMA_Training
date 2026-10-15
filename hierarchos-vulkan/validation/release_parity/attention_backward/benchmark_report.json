@@ -1,0 +1,112 @@
+{
+  "device": "AMD Radeon Graphics",
+  "timing": "median of 5 GPU timestamp samples; one dispatch per sample; bitwise output comparison required",
+  "cases": [
+    {
+      "batch": 2,
+      "mode": 0,
+      "query": 64,
+      "key": 64,
+      "heads": 4,
+      "kv_heads": 2,
+      "head_dim": 32,
+      "original_ms": 52.927,
+      "fixed_vs_original_ms": 44.351,
+      "speedup_vs_original": 1.19,
+      "regressed_ms": 44.12,
+      "fixed_vs_regressed_ms": 44.419,
+      "speedup_vs_regressed": 0.99
+    },
+    {
+      "batch": 8,
+      "mode": 0,
+      "query": 64,
+      "key": 64,
+      "heads": 4,
+      "kv_heads": 2,
+      "head_dim": 32,
+      "original_ms": 54.281,
+      "fixed_vs_original_ms": 45.483,
+      "speedup_vs_original": 1.19,
+      "regressed_ms": 45.184,
+      "fixed_vs_regressed_ms": 45.445,
+      "speedup_vs_regressed": 0.99
+    },
+    {
+      "batch": 16,
+      "mode": 0,
+      "query": 64,
+      "key": 64,
+      "heads": 4,
+      "kv_heads": 2,
+      "head_dim": 32,
+      "original_ms": 54.849,
+      "fixed_vs_original_ms": 45.858,
+      "speedup_vs_original": 1.2,
+      "regressed_ms": 45.383,
+      "fixed_vs_regressed_ms": 45.786,
+      "speedup_vs_regressed": 0.99
+    },
+    {
+      "batch": 32,
+      "mode": 0,
+      "query": 64,
+      "key": 64,
+      "heads": 4,
+      "kv_heads": 2,
+      "head_dim": 32,
+      "original_ms": 55.839,
+      "fixed_vs_original_ms": 48.445,
+      "speedup_vs_original": 1.15,
+      "regressed_ms": 88.803,
+      "fixed_vs_regressed_ms": 48.438,
+      "speedup_vs_regressed": 1.83
+    },
+    {
+      "batch": 128,
+      "mode": 0,
+      "query": 64,
+      "key": 64,
+      "heads": 4,
+      "kv_heads": 2,
+      "head_dim": 32,
+      "original_ms": 78.561,
+      "fixed_vs_original_ms": 71.139,
+      "speedup_vs_original": 1.1,
+      "regressed_ms": 263.776,
+      "fixed_vs_regressed_ms": 70.874,
+      "speedup_vs_regressed": 3.72
+    }
+  ],
+  "artifacts": {
+    "original": {
+      "sha256": "71d559f0cac9697c19e5f99a1d84d826553109f79faf096e41b3cf7a59de95ab"
+    },
+    "regressed": {
+      "sha256": "287a52e82e10fb2e3bbd0b7f12f95a65bb0c05aa8f7260360470ed27fc0439b0"
+    },
+    "fixed": {
+      "sha256": "5b16ecadc615098834186cf253291cd148ca4310aa4f9953157839677a06f549"
+    }
+  },
+  "strict_cases": [
+    {
+      "batch": 2,
+      "mode": 1,
+      "query": 8,
+      "key": 8,
+      "original_ms": 37.711,
+      "fixed_ms": 1.162,
+      "speedup": 32.45
+    },
+    {
+      "batch": 32,
+      "mode": 1,
+      "query": 8,
+      "key": 8,
+      "original_ms": 46.086,
+      "fixed_ms": 1.4,
+      "speedup": 32.91
+    }
+  ]
+}

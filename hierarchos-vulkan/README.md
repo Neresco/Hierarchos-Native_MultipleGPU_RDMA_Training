@@ -99,6 +99,107 @@ this does not imply identical RNG streams to an arbitrary PyTorch run.
 See [COMPATIBILITY.md](COMPATIBILITY.md) for reproducible validation commands,
 the tested scope, and remaining work toward full Transformers parity.
 
+## Training-kernel optimizations and verification
+
+The October 15, 2026 optimization work changes kernel memory reuse, command
+recording, and measurement while preserving the pre-optimization numerical
+trajectory on the qualified AMD Radeon Graphics device. The earlier CE/objective
+port remains part of both sides of the full-training comparison.
+
+| Area | Implementation |
+| --- | --- |
+| Dense linear and parameter-matmul projections | 16×16 output tiles stage 32-wide reduction tiles in shared memory. Covers FP32 and packed-FP16 forward/bias paths, linear residual forward, and parameter-matmul input gradients, including native-FP16 products. Increasing-index accumulation order, odd-stride unpacking, and small-shape scalar fallbacks are retained. |
+| Attention forward | Cache each row's scores/softmax values for bounded key spans instead of recomputing QK for every value channel; use the streaming fallback beyond the cache limit. |
+| Attention backward | Reuse scores, probabilities and row statistics in invocation-private caches. Removing 14,400 bytes of unnecessary workgroup storage closes the measured larger-batch slowdown. Strict arithmetic modes and oversized-row/head fallbacks are retained. |
+| Normalization | Share raw mean-square statistics across Qwen gated-RMS weight-gradient features, evaluating the reciprocal root in each consuming lane to preserve rounding. Remove the discarded scalar prepass from eight-lane RMSNorm backward. Cooperatively stage row reads for the fused low-rank LayerNorm producer while retaining scalar addition order. |
+| AdamW | Compute step-dependent bias-correction powers once per workgroup rather than once per parameter. |
+| Gradient accumulation | `gradient_accumulate8` packs up to eight independent tensors into one linearized dispatch and pads partial groups with zero lengths. Requires 16 storage-buffer bindings; four-way and scalar paths remain available. |
+| Pipeline setup | Identical SPIR-V and pipeline layouts share a compiled pipeline per logical device. Weak cache entries release driver memory with the last owner. |
+| Synchronization | Reflect `NonWritable`/`NonReadable` SPIR-V decorations and audit GLSL buffer qualifiers. Unknown or conflicting access remains conservative; independent read/read consumers can avoid a barrier. |
+
+The shader-access audit narrowed 41 bindings across 24 sources. Those qualifier
+edits produced no additional barrier reduction on the measured Hierarchos step;
+the measured reduction comes from runtime access reflection. On the fixed
+batch-2, eight-token fixture, the combined changes reduce dispatches from
+**6,912 to 6,464** and shader barriers from **3,412 to 3,076**. The eight-way
+accumulator also reduces the measured batch-32 step from **7,056 to 6,608
+dispatches**, retaining the same numerical result.
+
+Local kernel A/B measurements recorded these gains:
+
+| Kernel/shape class | Measured speedup |
+| --- | --- |
+| Dense projections, measured shapes with at least 16 rows | 2.67× median; up to 4.43× |
+| Attention forward, measured 64-query/64-key configurations | 4.6–6.2× |
+| Qwen gated-RMS weight gradient, measured 128/256-row configurations | 11.8× / 10.3× |
+| RMSNorm input gradient | Approximately 1.27× |
+| AdamW | Approximately 1.28–1.46× |
+| Attention backward, mode 0, batches 2–128, 64 queries/keys | 1.10–1.20× versus the original artifact; approximately 3.7× faster than the regressed cache implementation at batch 128 |
+
+These are individual-kernel results from the local AMD device. They do not imply
+the same whole-step speedup, and the final numerical sign-off makes no new
+throughput claim. The attention-backward regression is now closed on the measured
+AMD configurations: the earlier cache reserved shared storage despite using only
+one invocation per workgroup; invocation-private caches reduce batch-32 backward
+from **88.8 to 48.4 ms** and batch-128 backward from **263.8 to about 71 ms**.
+The original artifacts take **55.8 and 78.6 ms**, respectively. All benchmark
+outputs must match bit for bit, and the provenance gate rejects reintroducing
+workgroup storage in this single-invocation kernel. See the
+[backward performance receipt](validation/ATTENTION_BACKWARD_PERFORMANCE.md).
+Long strict-backward benchmark jobs can still hit this device's watchdog with
+either artifact; the new `--bench-mode 0 --bench-only` harness options let the
+safe mode be measured independently. The
+[measurement history](../PROGRESS_HIERARCHOS_VULKAN_TRAINING_OPTIMIZATIONS.md)
+retains the earlier results.
+
+GPU profiling now samples each shader's dispatches by default, reports the
+submission span separately from estimated dispatch totals, and groups placement
+comparisons by grid/push-constant/binding shape. Enable it with
+`HIERARCHOS_VULKAN_PROFILE_KERNELS=1`; set
+`HIERARCHOS_VULKAN_PROFILE_SAMPLE_STRIDE=1` for every-dispatch timestamps, or
+`HIERARCHOS_VULKAN_PROFILE_TOP_SHADERS=4096` for the full ranking.
+`validation/rank_kernel_profile.py` reads the reports, while `placement_probe`
+assigns barrier placement explicitly for controlled comparisons. Profiling
+perturbs execution, and sampled costs are estimates; use unprofiled
+`training_step_probe` runs for end-to-end throughput comparisons.
+
+### Numerical release gate
+
+Both debug and release verification pass on the qualified AMD device:
+
+- **406 exact kernel comparisons:** 144 dense, 183 reduction, and 79 attention
+  invocations against the original embedded artifacts, also checked with frozen
+  output digests.
+- **3,817 exact full-state tensor digests over 13 optimizer steps:** every
+  trainable parameter, both Adam moments, optimizer clocks, losses, recurrent
+  states, initial-state adjoints and context carriers across three fixtures.
+- **86 shader variants** rebuild byte-for-byte and validate with `spirv-val`.
+  `validation/training_shader_manifest.json` records the actual compiler and
+  flags per variant, including attention and mixed-precision specializations.
+- **706 library and 40 trainer tests** pass; nine explicit GPU microprofiles
+  remain ignored. Eight-way accumulation is checked against both fallback paths
+  across tensor counts, padded tails, and workgroup boundaries.
+
+The reduction harness's A/B comparison now dispatches the candidate before reading
+its outputs. The ladder exercises that comparison path as well as the frozen
+goldens. `training_step_probe --state-output FILE` captures untimed state hashes;
+the baseline-derived trajectory goldens reject parameter or optimizer drift even
+when loss still agrees. The standalone source package includes the validation
+directory required by the attention harness target.
+
+From this crate directory, run the two profiles sequentially:
+
+```powershell
+python validation/verify_training_stack.py --release --receipt target/release_parity.json
+python validation/verify_training_stack.py --receipt target/debug_parity.json
+cargo test --lib --bin hierarchos-vulkan-train -j 1 -- --test-threads=1
+```
+
+The gate fails for an unrecorded device rather than accepting an unverified
+result. These optimization changes have not yet received cross-vendor numerical
+qualification. See [SHIP_PARITY.md](validation/SHIP_PARITY.md) for baseline scope,
+negative controls, receipts, and the complete reproduction procedure.
+
 ## Standalone distribution
 
 The native backend can be staged and built without the surrounding Python
@@ -2401,6 +2502,7 @@ glslc shaders/packed_state_slot_backward.comp -o shaders/packed_state_slot_backw
 glslc shaders/gradient_accumulate.comp -o shaders/gradient_accumulate.spv
 glslc shaders/gradient_accumulate_scaled.comp -o shaders/gradient_accumulate_scaled.spv
 glslc shaders/gradient_accumulate4.comp -o shaders/gradient_accumulate4.spv
+glslc shaders/gradient_accumulate8.comp -o shaders/gradient_accumulate8.spv
 glslc shaders/gradient_scale.comp -o shaders/gradient_scale.spv
 glslc shaders/gradient_scale_from_buffer.comp -o shaders/gradient_scale_from_buffer.spv
 glslc shaders/gradient_scale_from_buffer_indexed.comp -o shaders/gradient_scale_from_buffer_indexed.spv
@@ -2410,7 +2512,7 @@ glslc shaders/gradient_lassq_partials.comp -o shaders/gradient_lassq_partials.sp
 glslc shaders/gradient_lassq_reduce.comp -o shaders/gradient_lassq_reduce.spv
 glslc shaders/gradient_clip_coefficient.comp -o shaders/gradient_clip_coefficient.spv
 glslc shaders/ordered_f32_sum.comp -o shaders/ordered_f32_sum.spv
-glslc shaders/adamw.comp -o shaders/adamw.spv
+glslc -O shaders/adamw.comp -o shaders/adamw.spv
 glslc shaders/adamw_range.comp -o shaders/adamw_range.spv
 glslc shaders/adamw_fp16_mirror.comp -o shaders/adamw_fp16_mirror.spv
 glslc shaders/fp32_to_fp16_packed.comp -o shaders/fp32_to_fp16_packed.spv

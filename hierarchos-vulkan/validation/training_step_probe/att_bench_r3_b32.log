@@ -1,0 +1,91 @@
+parity mode0_feature0 backward=false different=0 max_abs=0.000000000
+parity mode0_feature0 backward=true different=0 max_abs=0.000000000
+parity mode0_feature1 backward=false different=0 max_abs=0.000000000
+parity mode0_feature1 backward=true different=0 max_abs=0.000000000
+parity mode0_feature2 backward=false different=0 max_abs=0.000000000
+parity mode0_feature2 backward=true different=0 max_abs=0.000000000
+parity mode0_feature3 backward=false different=0 max_abs=0.000000000
+parity mode0_feature3 backward=true different=0 max_abs=0.000000000
+parity mode0_feature4 backward=false different=0 max_abs=0.000000000
+parity mode0_feature4 backward=true different=0 max_abs=0.000000000
+parity mode0_feature5 backward=false different=0 max_abs=0.000000000
+parity mode0_feature5 backward=true different=0 max_abs=0.000000000
+parity mode0_feature6 backward=false different=0 max_abs=0.000000000
+parity mode1_feature0 backward=false different=0 max_abs=0.000000000
+parity mode1_feature0 backward=true different=0 max_abs=0.000000000
+parity mode1_feature1 backward=false different=0 max_abs=0.000000000
+parity mode1_feature1 backward=true different=0 max_abs=0.000000000
+parity mode1_feature2 backward=false different=0 max_abs=0.000000000
+parity mode1_feature2 backward=true different=0 max_abs=0.000000000
+parity mode1_feature3 backward=false different=0 max_abs=0.000000000
+parity mode1_feature3 backward=true different=0 max_abs=0.000000000
+parity mode1_feature4 backward=false different=0 max_abs=0.000000000
+parity mode1_feature4 backward=true different=0 max_abs=0.000000000
+parity mode1_feature5 backward=false different=0 max_abs=0.000000000
+parity mode1_feature5 backward=true different=0 max_abs=0.000000000
+parity mode1_feature6 backward=false different=0 max_abs=0.000000000
+parity mode2_feature0 backward=false different=0 max_abs=0.000000000
+parity mode2_feature0 backward=true different=0 max_abs=0.000000000
+parity mode2_feature1 backward=false different=0 max_abs=0.000000000
+parity mode2_feature1 backward=true different=0 max_abs=0.000000000
+parity mode2_feature2 backward=false different=0 max_abs=0.000000000
+parity mode2_feature2 backward=true different=0 max_abs=0.000000000
+parity mode2_feature3 backward=false different=0 max_abs=0.000000000
+parity mode2_feature3 backward=true different=0 max_abs=0.000000000
+parity mode2_feature4 backward=false different=0 max_abs=0.000000000
+parity mode2_feature4 backward=true different=0 max_abs=0.000000000
+parity mode2_feature5 backward=false different=0 max_abs=0.000000000
+parity mode2_feature5 backward=true different=0 max_abs=0.000000000
+parity mode2_feature6 backward=false different=0 max_abs=0.000000000
+parity mode3_feature0 backward=false different=0 max_abs=0.000000000
+parity mode3_feature0 backward=true different=0 max_abs=0.000000000
+parity mode3_feature1 backward=false different=0 max_abs=0.000000000
+parity mode3_feature1 backward=true different=0 max_abs=0.000000000
+parity mode3_feature2 backward=false different=0 max_abs=0.000000000
+parity mode3_feature2 backward=true different=0 max_abs=0.000000000
+parity mode3_feature3 backward=false different=0 max_abs=0.000000000
+parity mode3_feature3 backward=true different=0 max_abs=0.000000000
+parity mode3_feature4 backward=false different=0 max_abs=0.000000000
+parity mode3_feature4 backward=true different=0 max_abs=0.000000000
+parity mode3_feature5 backward=false different=0 max_abs=0.000000000
+parity mode3_feature5 backward=true different=0 max_abs=0.000000000
+parity mode3_feature6 backward=false different=0 max_abs=0.000000000
+parity mode9_feature0 backward=false different=0 max_abs=0.000000000
+parity mode9_feature0 backward=true different=0 max_abs=0.000000000
+parity mode9_feature1 backward=false different=0 max_abs=0.000000000
+parity mode9_feature1 backward=true different=0 max_abs=0.000000000
+parity mode9_feature2 backward=false different=0 max_abs=0.000000000
+parity mode9_feature2 backward=true different=0 max_abs=0.000000000
+parity mode9_feature3 backward=false different=0 max_abs=0.000000000
+parity mode9_feature3 backward=true different=0 max_abs=0.000000000
+parity mode9_feature4 backward=false different=0 max_abs=0.000000000
+parity mode9_feature4 backward=true different=0 max_abs=0.000000000
+parity mode9_feature5 backward=false different=0 max_abs=0.000000000
+parity mode9_feature5 backward=true different=0 max_abs=0.000000000
+parity mode9_feature6 backward=false different=0 max_abs=0.000000000
+parity key_cache_512 backward=false different=0 max_abs=0.000000000
+parity key_cache_512 backward=true different=0 max_abs=0.000000000
+parity key_cache_513 backward=false different=0 max_abs=0.000000000
+parity key_cache_513 backward=true different=0 max_abs=0.000000000
+parity forward_cache_1024 backward=false different=0 max_abs=0.000000000
+parity forward_cache_1024 backward=true different=0 max_abs=0.000000000
+parity forward_cache_1025 backward=false different=0 max_abs=0.000000000
+parity forward_cache_1025 backward=true different=0 max_abs=0.000000000
+parity strict_head_fallback backward=false different=0 max_abs=0.000000000
+parity strict_head_fallback backward=true different=0 max_abs=0.000000000
+parity strict_stats_fallback backward=false different=0 max_abs=0.000000000
+parity strict_stats_fallback backward=true different=0 max_abs=0.000000000
+parity long_input_short_window backward=false different=0 max_abs=0.000000000
+parity long_input_short_window backward=true different=0 max_abs=0.000000000
+bench_shape bench_mode0 backward=false workgroups=8192 query=64 key=64 batch=32 heads=4 kv_heads=2
+timing bench_mode0 backward=false repeats=3
+benchmark bench_mode0 backward=false baseline_ms=51.647 optimized_ms=8.667 speedup=5.96
+bench_shape bench_mode0 backward=true workgroups=64 query=64 key=64 batch=32 heads=4 kv_heads=2
+timing bench_mode0 backward=true repeats=3
+benchmark bench_mode0 backward=true baseline_ms=56.516 optimized_ms=88.631 speedup=0.64
+bench_shape bench_mode1 backward=false workgroups=8192 query=64 key=64 batch=32 heads=4 kv_heads=2
+timing bench_mode1 backward=false repeats=3
+benchmark bench_mode1 backward=false baseline_ms=37.224 optimized_ms=9.539 speedup=3.90
+bench_shape bench_mode1 backward=true workgroups=64 query=64 key=64 batch=32 heads=4 kv_heads=2
+timing bench_mode1 backward=true repeats=3
+Error: submitting Vulkan compute batch: ERROR_DEVICE_LOST

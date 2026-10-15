@@ -6,7 +6,7 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std430) readonly buffer TokenBuffer { uint token_ids[]; };
 layout(set = 0, binding = 1, std430) readonly buffer SourcePositionBuffer { uint source_positions[]; };
-layout(set = 0, binding = 2, std430) buffer HistogramBuffer { uint block_histograms[]; };
+layout(set = 0, binding = 2, std430) writeonly buffer HistogramBuffer { uint block_histograms[]; };
 
 layout(push_constant) uniform Push {
     uint token_count;

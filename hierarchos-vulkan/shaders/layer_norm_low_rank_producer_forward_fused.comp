@@ -60,6 +60,7 @@ layout(push_constant) uniform Push {
 
 shared float row_mean;
 shared float row_rstd;
+shared float reduce_tile[64];
 shared float mixed_w_tile[64];
 shared float mixed_a_tile[64];
 shared float mixed_g_tile[64];
@@ -93,18 +94,49 @@ void main() {
     }
 
     uint base = row * pc.width;
+    // Lane 0 still adds the row in the same scalar order as layer_norm_forward.comp and
+    // with the same values, but it now reads each tile of the row from shared memory
+    // instead of from `x`. Adding straight out of global memory put `pc.width` dependent
+    // memory round trips on one lane while the other 63 waited at the barrier, which is
+    // what made this kernel cost ~140 us per dispatch at every row count. The additions
+    // and their order are untouched, so mean and rstd stay bit-identical.
+    float mean = 0.0;
+    float variance = 0.0;
+    for (uint tile = 0u; tile < pc.width; tile += 64u) {
+        uint tile_len = min(64u, pc.width - tile);
+        if (lane < tile_len) {
+            reduce_tile[lane] = x[base + tile + lane];
+        }
+        memoryBarrierShared();
+        barrier();
+        if (lane == 0u) {
+            for (uint i = 0u; i < tile_len; ++i) {
+                mean += reduce_tile[i];
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+    }
     if (lane == 0u) {
-        float mean = 0.0;
-        for (uint col = 0u; col < pc.width; ++col) {
-            mean += x[base + col];
-        }
         mean /= float(pc.width);
-
-        float variance = 0.0;
-        for (uint col = 0u; col < pc.width; ++col) {
-            float centered = x[base + col] - mean;
-            variance = fma(centered, centered, variance);
+    }
+    for (uint tile = 0u; tile < pc.width; tile += 64u) {
+        uint tile_len = min(64u, pc.width - tile);
+        if (lane < tile_len) {
+            reduce_tile[lane] = x[base + tile + lane];
         }
+        memoryBarrierShared();
+        barrier();
+        if (lane == 0u) {
+            for (uint i = 0u; i < tile_len; ++i) {
+                float centered = reduce_tile[i] - mean;
+                variance = fma(centered, centered, variance);
+            }
+        }
+        memoryBarrierShared();
+        barrier();
+    }
+    if (lane == 0u) {
         variance /= float(pc.width);
         float rstd = inversesqrt(variance + pc.eps);
         row_mean = mean;

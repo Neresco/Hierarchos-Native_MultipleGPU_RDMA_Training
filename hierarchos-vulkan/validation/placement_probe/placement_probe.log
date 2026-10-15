@@ -1,0 +1,24 @@
+placement probe on AMD Radeon Graphics: 7 shape(s), blocks [32, 64, 128], 4 trial(s) per shape
+each arm alternates in both orders (warm-cold-cold-warm, cold-warm-warm-cold); cold records one barrier per dispatch, warm records none, and both are verified from the recorded command stream before a block is timed
+linear_forward       shape   32x128x128 grid     8x2x1 block  32  warm     4.38 us/disp (wall    12.36)  cold    15.96 us/disp (wall    21.00)  inherited   11.58 us/disp (wall    8.64)  barriers cold/warm 32/0
+linear_bias_forward  shape   32x128x128 grid     8x2x1 block  32  warm     4.40 us/disp (wall     7.91)  cold    16.26 us/disp (wall    20.86)  inherited   11.86 us/disp (wall   12.95)  barriers cold/warm 32/0
+linear_bias_forward  shape   512x128x16 grid    1x32x1 block  32  warm     8.62 us/disp (wall    12.32)  cold    19.45 us/disp (wall    23.99)  inherited   10.83 us/disp (wall   11.67)  barriers cold/warm 32/0
+linear_forward       shape  512x128x128 grid    8x32x1 block  32  warm    66.41 us/disp (wall    88.23)  cold    74.84 us/disp (wall    99.83)  inherited    8.43 us/disp (wall   11.60)  barriers cold/warm 32/0
+linear_bias_forward  shape   32x512x512 grid    32x2x1 block  32  warm    50.44 us/disp (wall    72.18)  cold    75.55 us/disp (wall    98.66)  inherited   25.11 us/disp (wall   26.47)  barriers cold/warm 32/0
+vector_add           shape    1x65536x1 grid   256x1x1 block  32  warm     3.57 us/disp (wall     6.87)  cold     6.26 us/disp (wall    13.28)  inherited    2.69 us/disp (wall    6.42)  barriers cold/warm 32/0
+finite_clamp_forward shape    1x65536x1 grid   256x1x1 block  32  warm     3.23 us/disp (wall     7.22)  cold     4.00 us/disp (wall    11.07)  inherited    0.77 us/disp (wall    3.85)  barriers cold/warm 32/0
+linear_forward       shape   32x128x128 grid     8x2x1 block  64  warm     4.33 us/disp (wall     6.50)  cold    15.92 us/disp (wall    20.21)  inherited   11.59 us/disp (wall   13.71)  barriers cold/warm 64/0
+linear_bias_forward  shape   32x128x128 grid     8x2x1 block  64  warm     4.34 us/disp (wall     6.60)  cold    16.33 us/disp (wall    20.92)  inherited   11.98 us/disp (wall   14.32)  barriers cold/warm 64/0
+linear_bias_forward  shape   512x128x16 grid    1x32x1 block  64  warm     8.61 us/disp (wall    12.04)  cold    19.43 us/disp (wall    24.38)  inherited   10.81 us/disp (wall   12.34)  barriers cold/warm 64/0
+linear_forward       shape  512x128x128 grid    8x32x1 block  64  warm    44.55 us/disp (wall    55.14)  cold    49.13 us/disp (wall    61.95)  inherited    4.57 us/disp (wall    6.80)  barriers cold/warm 64/0
+linear_bias_forward  shape   32x512x512 grid    32x2x1 block  64  warm    29.95 us/disp (wall    40.01)  cold    56.22 us/disp (wall    64.00)  inherited   26.27 us/disp (wall   24.00)  barriers cold/warm 64/0
+vector_add           shape    1x65536x1 grid   256x1x1 block  64  warm     3.75 us/disp (wall     5.65)  cold     6.03 us/disp (wall    11.25)  inherited    2.28 us/disp (wall    5.60)  barriers cold/warm 64/0
+finite_clamp_forward shape    1x65536x1 grid   256x1x1 block  64  warm     3.14 us/disp (wall     5.12)  cold     3.21 us/disp (wall     8.07)  inherited    0.07 us/disp (wall    2.95)  barriers cold/warm 64/0
+linear_forward       shape   32x128x128 grid     8x2x1 block 128  warm     3.72 us/disp (wall    10.44)  cold    15.44 us/disp (wall    22.47)  inherited   11.72 us/disp (wall   12.02)  barriers cold/warm 128/0
+linear_bias_forward  shape   32x128x128 grid     8x2x1 block 128  warm     4.34 us/disp (wall     9.88)  cold    16.33 us/disp (wall    23.46)  inherited   11.99 us/disp (wall   13.58)  barriers cold/warm 128/0
+linear_bias_forward  shape   512x128x16 grid    1x32x1 block 128  warm     8.49 us/disp (wall    13.91)  cold    19.29 us/disp (wall    27.65)  inherited   10.80 us/disp (wall   13.74)  barriers cold/warm 128/0
+linear_forward       shape  512x128x128 grid    8x32x1 block 128  warm    30.06 us/disp (wall    34.27)  cold    34.12 us/disp (wall    44.27)  inherited    4.07 us/disp (wall   10.00)  barriers cold/warm 128/0
+linear_bias_forward  shape   32x512x512 grid    32x2x1 block 128  warm    20.53 us/disp (wall    27.33)  cold    50.27 us/disp (wall    60.56)  inherited   29.74 us/disp (wall   33.23)  barriers cold/warm 128/0
+vector_add           shape    1x65536x1 grid   256x1x1 block 128  warm     3.90 us/disp (wall     6.08)  cold     6.03 us/disp (wall    11.46)  inherited    2.13 us/disp (wall    5.38)  barriers cold/warm 128/0
+finite_clamp_forward shape    1x65536x1 grid   256x1x1 block 128  warm     3.24 us/disp (wall     4.93)  cold     3.80 us/disp (wall     8.98)  inherited    0.56 us/disp (wall    4.05)  barriers cold/warm 128/0
+wrote validation/placement_probe/placement_probe.json

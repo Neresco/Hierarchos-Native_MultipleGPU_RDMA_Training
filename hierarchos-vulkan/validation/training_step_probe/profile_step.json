@@ -1,0 +1,30 @@
+{
+  "device": "AMD Radeon Graphics",
+  "model_dir": "C:\\Users\\User\\AppData\\Local\\Temp\\hierarchos-training-step-probe-v128-128",
+  "batch": 2,
+  "tokens_per_sequence": 8,
+  "sequences": 1,
+  "batch_tokens_per_step": 16,
+  "warmup_steps": 1,
+  "measured_steps": 2,
+  "readback": "full",
+  "median_step_ms": 212.69140000000002,
+  "median_tokens_per_second": 75.22636082135902,
+  "median_steps_per_second": 4.701647551334938,
+  "dispatch_count": 6912,
+  "shader_barrier_count": 3076,
+  "queue_submissions": 1,
+  "mean_loss": 5.169036,
+  "samples": [
+    {
+      "step": 0,
+      "elapsed_ms": 212.69140000000002,
+      "tokens_per_second": 75.22636082135902
+    },
+    {
+      "step": 1,
+      "elapsed_ms": 200.8443,
+      "tokens_per_second": 79.66369969175128
+    }
+  ]
+}

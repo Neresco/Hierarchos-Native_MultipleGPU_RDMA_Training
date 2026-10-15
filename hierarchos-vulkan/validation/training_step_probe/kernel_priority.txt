@@ -1,0 +1,255 @@
+kernel priority list, rebuilt from the stride-17 (unperturbed) profile
+=====================================================================
+
+Provenance. Every number below comes from the per-shader profile of the canonical
+synthetic step (training_step_probe, tokens 8, sequences 1, synthetic token cycle,
+warmup 1) with the complete shader table (HIERARCHOS_VULKAN_PROFILE_TOP_SHADERS=4096)
+and the default sampling stride 17. Source logs and the generated tables:
+
+  target/prof_check/rank_b2.log    -> kernel_ranking_b2.txt     (batch 2,  5 steps)
+  target/prof_check/rank_b32.log   -> kernel_ranking_b32.txt    (batch 32, 5 steps)
+  target/prof_check/rank_b512.log  -> kernel_ranking_b512.txt   (batch 512, 5 steps)
+  target/prof_check/rank_s5_b32.log-> kernel_ranking_s5_b32.txt (batch 32, 8 steps, stride 5)
+  target/prof_check/rank_s1_b32.log-> kernel_ranking_s1_b32.txt (batch 32, 3 steps, stride 1)
+  target/prof_check/rank_s1_b512.log->kernel_ranking_s1_b512.txt(batch 512, 3 steps, stride 1)
+
+kernel_ranking.txt is the batch-512 stride-17 table (regenerated).
+
+Three regimes, three orders
+---------------------------
+
+Category shares of the GPU step (stride 17):
+
+  category                        batch 2     batch 32    batch 512
+  rwkv.recurrent                   24.73%      36.89%      77.60%
+  normalization.layer-norm         43.82%      34.04%       7.73%
+  projection.linear                17.08%      11.77%       4.61%
+  control                           4.95%       4.69%       2.18%
+  elementwise-reduction             1.22%       4.31%       5.15%
+  optimizer.gradient-bookkeeping    4.54%       3.70%       0.38%
+  loss.lm-projection                1.97%       1.70%       0.71%
+  token.embedding                   0.42%       1.65%       0.62%
+  other                             0.88%       0.95%       0.96%
+
+  Every column is the stride-17 table. The exact-bracket (stride 1) run at batch 512
+  differs by less than half a point on the leaders (rwkv.recurrent 77.89%, layer-norm
+  7.44%, elementwise-reduction 4.65%, projection.linear 4.79%), because at that batch
+  size the instrument barely moves the span.
+
+GPU step total: 61.716 ms at batch 2, 85.054 ms at batch 32, 1284.871 ms at batch 512.
+Wall step (probe median): 78.279 ms, 124.148 ms, 1550.024 ms.
+
+So "the" priority list does not exist: at the trainer's default batch the layer-norm /
+low-rank-producer family leads, and at batch 512 the packed recurrent kernels lead.
+The stride-1 tables give the same order in both regimes, so the order is not a
+sampling artifact; only the levels move (see "What stride 1 changes" below).
+
+Priority list at the trainer's default batch (32), stride 17
+------------------------------------------------------------
+
+  #  kernel                                                     disp   ms/step   share    us/disp  lever
+  1  layer_norm_low_rank_producer_forward_fused                  144    15.459   18.18%    107.4   execution
+  2  packed_cell_channel_mix_state_forward_fused                 144     9.351   10.99%     64.9   execution
+  3  rwkv_time_mix3_linear3_key_state_forward_packed_fast         96     7.270    8.55%     75.7   execution
+  4  layer_norm_adapter_forward_fused_512                        144     6.432    7.56%     44.7   execution + placement
+  5  rwkv_matrix_state_backward_fused_rkv_add3                    48     3.096    3.64%     64.5   execution
+  6  rwkv_time_mix3_linear3_key_state_forward_fused               48     2.867    3.37%     59.7   execution
+  7  gradient_accumulate4                                         768     2.711    3.19%      3.5   dispatch count
+  8  linear_bias_forward                                          192     2.359    2.77%     12.3   dispatch count + placement
+  9  rwkv_group_norm_bonus_gate_linear_residual_forward_fused     144     2.251    2.65%     15.6   execution
+ 10  layer_norm_backward_fused_add_residual                        48     2.159    2.54%     45.0   execution
+ 11  layer_norm_input_grad                                         64     2.029    2.39%     31.7   execution
+ 12  linear_input_grad                                            385     1.955    2.30%      5.1   dispatch count
+ 13  layer_norm_input_grad_residual_fused                          48     1.873    2.20%     39.0   execution
+ 14  linear_weight_grad                                           385     1.741    2.05%      4.5   dispatch count
+ 15  drift_update_forward                                          48     1.499    1.76%     31.2   execution
+ 16  linear3_input_grad                                            48     1.434    1.69%     29.9   execution
+ 17  rwkv_bonus_gate_backward                                      48     1.322    1.55%     27.5   execution
+ 18  rwkv_key_transform_backward                                   48     1.275    1.50%     26.6   execution
+ 19  bias_grad                                                    240     1.262    1.48%      5.3   dispatch count + placement
+ 20  parameter_matmul_weight_grad                                 288     1.261    1.48%      4.4   dispatch count
+ 21  linear_forward                                               105     1.234    1.45%     11.8   dispatch count
+ 22  rwkv_time_mix3_backward                                       96     1.189    1.40%     12.4   execution
+
+  top 4 kernels: 45.28% of the step.  top 6: 52.29%.  top 8: 58.25%.
+
+  The stride-5 confirmation run (8 steps, 29 samples per 144-dispatch shader) puts
+  the same four at the top with 17.52 / 10.79 / 8.07 / 7.38% and the same order,
+  every level within 4%: the ordering at batch 32 is not a sampling artifact.
+
+  Lever "execution" means the kernel's own dispatched work dominates its cost and no
+  cheaper structural change to the stream reaches it. "Dispatch count" means its GPU
+  time is small but it is dispatched hundreds of times, so its recording cost (host)
+  is comparable to its execution and it is a batching candidate.
+
+Priority list at batch 512 (the throughput regime), stride 17
+-------------------------------------------------------------
+
+  #  kernel                                                     disp   ms/step   share    us/disp  lever
+  1  rwkv_time_mix3_linear3_key_state_forward_packed_fast         96   338.969   26.38%   3530.9   execution
+  2  rwkv_matrix_state_backward_fused_rkv_add3                    48   283.848   22.09%   5913.5   execution
+  3  packed_cell_channel_mix_state_forward_fused                 144   132.504   10.31%    920.2   execution
+  4  rwkv_time_mix3_linear3_key_state_forward_fused               48   101.443    7.90%   2113.4   execution
+  5  layer_norm_adapter_forward_fused_512                        144    32.965    2.57%    228.9   placement
+  6  rwkv_key_transform_backward                                  48    30.704    2.39%    639.7   execution
+  7  layer_norm_low_rank_producer_forward_fused                  144    27.434    2.14%    190.5   execution
+
+  top 4: 66.68% of the step. Here execution is the only lever that reaches the top four:
+  they are long-running kernels dispatched 48-144 times, and no amount of stream
+  restructuring removes the arithmetic the step needs.
+
+Priority list at batch 2 (the smallest regime the probe supports)
+----------------------------------------------------------------
+
+  #  kernel                                                     disp   ms/step   share    us/disp
+  1  layer_norm_low_rank_producer_forward_fused                  144    18.523   30.01%    128.6
+  2  packed_cell_channel_mix_state_forward_fused                 144     7.297   11.82%     50.7
+  3  layer_norm_adapter_forward_fused_512                        144     3.625    5.87%     25.2
+  4  rwkv_time_mix3_linear3_key_state_forward_packed_fast         96     2.584    4.19%     26.9
+  5  linear_bias_forward                                          192     2.571    4.17%     13.4
+  6  gradient_accumulate4                                         768     2.527    4.10%      3.3
+  7  linear_input_grad                                            385     2.202    3.57%      5.7
+  8  rwkv_group_norm_bonus_gate_linear_residual_forward_fused     144     2.200    3.56%     15.3
+
+  At batch 2 the producer alone is 30.01% of the step, and the count class below is
+  already 45.2% of its dispatches (3124 of 6912) and 12.27% of its GPU time (7.570 of
+  61.716 ms). The counts are batch-independent (1152, 1346, 1739, 308 ... dispatches
+  per step at every batch size), so as the batch shrinks the fixed per-dispatch costs
+  take over. A step spends 6912-7120 dispatches whatever the batch; that number, not
+  the flops, is what the small-batch regime is paying for.
+
+The count lever, quantified
+---------------------------
+
+  Selection: every shader dispatched at least 240 times per step whose GPU time is at
+  most 6 us per dispatch, at each batch size.
+
+    shader                             batch 32 disp   us/disp   gpu_ms/step
+    gradient_accumulate4                         768       3.5        2.711
+    gradient_accumulate                          482       0.9        0.431
+    linear_input_grad                            385       5.1        1.955
+    linear_weight_grad                           385       4.5        1.741
+    vector_add                                   308       2.1        0.653
+    parameter_matmul_weight_grad                 288       4.4        1.261
+    parameter_matmul_input_grad                  288       0.1        0.025
+    finite_clamp_forward                         288       1.7        0.484
+    bias_grad                                    240       5.3        1.262
+
+  batch 2:   8 shaders,  3124 of 6912 dispatches (45.2%),  7.570 ms of  61.716 (12.27%)
+  batch 32:  9 shaders,  3432 of 7056 dispatches (48.6%), 10.523 ms of  85.054 (12.37%)
+  batch 512: 3 shaders,  1538 of 7120 dispatches (21.6%),  6.245 ms of 1284.871 (0.49%)
+
+  Their recording is the other half, at 1.5-3.6 us per recorded dispatch (wall minus
+  span: 10.5 ms / 6912 at batch 2, 25.5 ms / 7056 at batch 32): 4.7-11.2 ms at batch 2,
+  5.1-12.4 ms at batch 32, 2.3-5.5 ms at batch 512. So the class is 6-14% of a 78 ms
+  batch-2 step and 5-13% of a 124 ms batch-32 step, and under 1% of the 1550 ms
+  batch-512 step, where only three of the nine kernels still qualify at <= 6 us each.
+
+  Execution alone would not pay for restructuring them: 12% of GPU time at the small
+  batches. Their recording cost is what makes the class worth attacking, and it is the
+  same order as their execution. The eighth pass's size estimate (~10 us per recorded
+  dispatch) and this list's (1.5-3.6) agree on the mechanism and disagree on the level,
+  because the earlier number came from a run whose own instrumentation inflated it; the
+  harness in validation/placement_probe/ measures the per-dispatch host cost directly
+  as wall minus GPU at 1.7-5.4 us for these shapes.
+
+  What would have to change first: the per-slot pattern. gradient_accumulate4 is one
+  shader at 768 call sites, so it is the cleanest single candidate; the 1346
+  optimizer.gradient-bookkeeping dispatches remain blocked on a gradient slab, because
+  each optimizer slot owns its own allocation and storage bindings cannot be indexed
+  without descriptor indexing.
+
+What stride 1 changes, and which numbers this list uses
+-------------------------------------------------------
+
+Stride 17 is the ranking's basis because it is the unperturbed one: stride 1 writes two
+timestamps per dispatch, and those writes serialize the compute pipeline, so every
+bracket measures an *isolated* dispatch. At batch 32 the same step is 110.384 ms of
+brackets at stride 1 against 86.431 ms at stride 5 and 85.054 ms at stride 17, while the
+wall clock goes the other way (204.220 ms at stride 1 against 124.148 ms at stride 17).
+
+  kernel                                                       stride 17   stride 5   stride 1
+  layer_norm_low_rank_producer_forward_fused    (us/disp)         107.4      105.1      134.5
+  packed_cell_channel_mix_state_forward_fused   (us/disp)          64.9       64.8       81.4
+  rwkv_time_mix3_..._packed_fast                (us/disp)          75.7       72.7      108.6
+  layer_norm_adapter_forward_fused_512          (us/disp)          44.7       44.3       58.7
+
+  Strides 5 and 17 agree within 4%; stride 1 is 20-30% above both. So the order is
+  stable and the level in this list is the stride-17 one, with the caveat that even it
+  is an upper bound: 1 in 17 dispatches is still isolated by its own timestamps.
+
+  At batch 512 the instrument does not move the span at all (1341.762 ms at stride 17
+  against 1341.146 ms at stride 1), because the step is long enough that the isolated
+  dispatches still fit; at batch 32 the span moves 98.646 -> 130.311 ms. The
+  instrument's distortion is worst exactly where the per-dispatch cost is smallest.
+
+  Sampling also distorts the placement table more than the cost table, and there it is
+  not a matter of a few percent:
+
+  * Rows disappear. layer_norm_adapter_forward_fused_512's 3-sample cold/warm pair at
+    batch 512 straddles a row that the stride-1 run has 96/48 samples for, and
+    packed_state_slot_backward (8/8 at stride 1) has no row at all at stride 17,
+    because a shape whose sampled dispatches all landed in one population is filtered
+    out. A placement table read at stride 17 is a table of the shapes that happened to
+    be sampled, not of the shapes the step ran.
+  * Means move by up to 40x. At batch 512 the producer reads +0.464 us at stride 17
+    (3 cold, 6 warm) against +20.196 us at stride 1 (48 cold, 96 warm).
+  * At batch 32 the same comparison is much better behaved: producer +27.269 (3/6)
+    against +29.921 (48/96), bias_grad +8.273 (9/5) against +10.107 (96/56),
+    vector_add +0.997 (11/6) against +1.055 (140/120), finite_clamp_forward +0.303
+    (7/4) against +0.287 (144/80).
+
+  So: cost ranking from stride 17, placement ratios from stride 1, and every placement
+  number in this list is quoted with its sample counts.
+
+What the assigned-placement harness adds
+----------------------------------------
+
+validation/placement_probe/ (src/bin/placement_probe.rs) dispatches one kernel both ways
+with placement *assigned*: an explicit barrier before every cold dispatch, none before
+the warm ones, both arms alternating in both orders, barrier counts read back from the
+command stream before a block is timed, and identical buffers in both arms so no
+aliasing confound is introduced. Per dispatch, medians over 8 alternating blocks:
+
+  kernel / shape                       grid      warm us   cold us   inherited
+  linear_forward      32x128x128       8x2x1       4.34      15.96      +11.6
+  linear_bias_forward 32x128x128       8x2x1       4.34      16.33      +12.0
+  linear_bias_forward 512x128x16       1x32x1      8.49      19.29      +10.8
+  vector_add          1x65536x1        256x1x1     3.75       6.03       +2.3
+  finite_clamp_forward 1x65536x1       256x1x1     3.24       3.80       +0.6
+  linear_forward      512x128x128      8x32x1     30.06      34.12       +4.1
+  linear_bias_forward 32x512x512       32x2x1     20.53      50.27      +29.7
+
+  Three things the profile's observed split cannot show:
+
+  1. Inheritance is a property of the shape class, not a constant. A single elementwise
+     stream over 256 workgroups pays ~0.6 us for the barrier in front of it; a narrow
+     matmul shape pays ~11-12 us; the widest shape measured pays ~30 us.
+  2. For compute-bound wide shapes it is also a property of the *block*: the same
+     dispatch costs 50.44 us at 32 dispatches per submission and 20.53 us at 128, so
+     most of what a barrier costs there is the inter-dispatch overlap it prevents, not
+     a fixed flush. A "cost per barrier" constant does not exist.
+  3. Identical buffers and identical neighbours in both arms put finite_clamp_forward at
+     +0.6 us, while the step's profile reports -4.588 us (144 cold, 80 warm) for the
+     same kernel at the same grid. The profile's cold/warm difference therefore carries
+     the *neighbour* kernel's identity, not only the kernel's response to placement.
+
+  Limits of the harness: it measures kernels whose dispatch parameters are already
+  pinned down by an existing validation harness (the two linear kernels, vector_add,
+  finite_clamp_forward), so its numbers transfer to the wide recurrent kernels by
+  argument, not by measurement; its GPU reading goes through the device's own
+  per-dispatch timestamps, so its absolute levels carry the same isolation as stride 1
+  while the cold/warm difference stays comparable; and each block's dispatches write
+  distinct output buffers, which the real step does not.
+
+Not established here
+--------------------
+
+  * Whether the batch-512 top four can be made faster at all. Their arithmetic is
+    required by the step; no measurement in this pass touches their internals.
+  * What the producer's 107 us per dispatch is spent on at batch 32. Its own cost is
+    bounded (about 20-30 us of it is placement, and ~20-25% of the cold time at stride
+    1), but the remaining ~80 us is unattributed: the harness cannot instantiate it.
+  * The exact host cost in a real step. wall minus span gives 1.5-3.6 us per recorded
+    dispatch, but it also carries per-submission submit and readback costs that the
+    synthetic harness does not separate.

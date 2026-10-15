@@ -63,6 +63,14 @@ void main() {
     if (row >= pc.rows) {
         return;
     }
+    // A zero source is an absent objective edge, even if its forward row is
+    // non-finite. The condition is uniform across this row's workgroup.
+    if (row_stats[row * 5u + 4u] == 0.0) {
+        for (uint in_col = lane; in_col < pc.input_dim; in_col += 64u) {
+            grad_input[row * pc.input_dim + in_col] = 0.0;
+        }
+        return;
+    }
     float mean = norm_mean[row];
     float rstd = norm_rstd[row];
 

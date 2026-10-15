@@ -1,0 +1,1378 @@
+{
+  "pass": true,
+  "variants": [
+    {
+      "artifact": "adamw.spv",
+      "source": "adamw.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-O"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b3218d6c760e65b577d9aa88211a90589eee1468f887b0228570e1ba6afc3130",
+      "sha256": "a7f8bb02fff88c7926404112165cdef2375b369b99b69b5104326f8dd3d528ea",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a7f8bb02fff88c7926404112165cdef2375b369b99b69b5104326f8dd3d528ea"
+    },
+    {
+      "artifact": "buffer_zero_on_optimizer_skip.spv",
+      "source": "buffer_zero_on_optimizer_skip.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "2ed9d05cda933e2885a7b703d56cfc2b70a08213cac3ed55e50b6f544b1084ff",
+      "sha256": "7b5ced159d3bbf4eda7594875f4ce9702cd71f5e0cb7ec24f5c200c6871bae25",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "7b5ced159d3bbf4eda7594875f4ce9702cd71f5e0cb7ec24f5c200c6871bae25"
+    },
+    {
+      "artifact": "canonical_dropout.spv",
+      "source": "canonical_dropout.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "c327b1ce18f172367775441381bb804fe05e71fa3a246e38b109691839508b08",
+      "sha256": "07e7ccf26fb611b3f996a9efa35d1025c94af67e56795c3ec1ce5a7d587b0902",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "07e7ccf26fb611b3f996a9efa35d1025c94af67e56795c3ec1ce5a7d587b0902"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "f6085315e1d507e5bb110e9ef01cf0820fdb90b55b7aec978aaf41a2fcde081c",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f6085315e1d507e5bb110e9ef01cf0820fdb90b55b7aec978aaf41a2fcde081c"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=64",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "270d0e36c8217c1122ab6d01ea9c821ba2af34206ad0a6a5eadec17471fe68cd",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "270d0e36c8217c1122ab6d01ea9c821ba2af34206ad0a6a5eadec17471fe68cd"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=128",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "f49b117c13257bb9c568743280a8ea55a727108472a9d309c97ded37e267adfd",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f49b117c13257bb9c568743280a8ea55a727108472a9d309c97ded37e267adfd"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile128_wg128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=128",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=128"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "6e0343268f23bef51b6f081f31a4bee3b17f8898cd8136fadf076df8771878f0",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "6e0343268f23bef51b6f081f31a4bee3b17f8898cd8136fadf076df8771878f0"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=64"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "76bd97bcc8ee58b687cf77c7a0a6fda2aef4b18f5e8fafd2d74e2bfa4fcafb95",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "76bd97bcc8ee58b687cf77c7a0a6fda2aef4b18f5e8fafd2d74e2bfa4fcafb95"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256_wg128.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=128"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "2c3585e4e1119d99ba6b59844eabad50c66f1ca9fcb81a5e948e7c4aa0f98503",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "2c3585e4e1119d99ba6b59844eabad50c66f1ca9fcb81a5e948e7c4aa0f98503"
+    },
+    {
+      "artifact": "cross_entropy_linear_adjoints_tape_fp16_packed_fused_private_hidden_tile256_wg256.spv",
+      "source": "cross_entropy_linear_adjoints_tape_fp16_packed_fused.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_FUSED_PRIVATE_HIDDEN=1",
+        "-DLM_CE_FUSED_VOCAB_TILE=256",
+        "-DLM_CE_FUSED_WORKGROUP_SIZE=256"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "3b984c4765dad35b1d7265ca76d331369e5aa10f142cdd54d08b4a23bf2a8d7c",
+      "sha256": "f53c3a14927d57d40ac92f4c42b6af2692d5bad396bf30fbc8a13e3d7d725bb8",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f53c3a14927d57d40ac92f4c42b6af2692d5bad396bf30fbc8a13e3d7d725bb8"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming.spv",
+      "source": "cross_entropy_linear_input_grad_streaming.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "fc9e843127f46109dd4017aed340d699e4f4f0a5758233d5cc01e4275641e6e4",
+      "sha256": "a5d7aab2889a2e955e71ae57f1be1c587f19163531b4bca922ca287a120d98a7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a5d7aab2889a2e955e71ae57f1be1c587f19163531b4bca922ca287a120d98a7"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "a0bfd41c182297be5ca68cb25910b78ad09d2b683e6e58262846514ae4eb71fe",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a0bfd41c182297be5ca68cb25910b78ad09d2b683e6e58262846514ae4eb71fe"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_compute.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "5efaece4eab6be8d0a380a7a7197d52d754dbf44dadbebcae0b4a72a16d5bd06",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "5efaece4eab6be8d0a380a7a7197d52d754dbf44dadbebcae0b4a72a16d5bd06"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse128.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=128"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "e8e552f695be1d00c4c8fe810f255eacac490d355977bd73b3627ae225cad4c1",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "e8e552f695be1d00c4c8fe810f255eacac490d355977bd73b3627ae225cad4c1"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse224.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=224"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "645d31ff318aee75f7ce0aa6675004a025d891ad02ef45b879113292fe026839",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "645d31ff318aee75f7ce0aa6675004a025d891ad02ef45b879113292fe026839"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_native_reuse64.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_native.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_WEIGHT_REUSE_PAIRS=64"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1a7174b886cb691c0e02fa6e450d68773b00cfe01f62060af6a0fc3eb5cdfbf5",
+      "sha256": "fa2714ce7ba01cecf44cd3ea8060ba30af47076cf4bb8a00673fc35f5d535734",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "fa2714ce7ba01cecf44cd3ea8060ba30af47076cf4bb8a00673fc35f5d535734"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_input_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "27ddf41ef6f0ebdad4b9ff042e48998f2ee428a5c18bc687a9cb586b7a0dc846",
+      "sha256": "db4eaf01b0f92efe000ec5a3d441dc881d3d4a15ae58ed3939c45e31693fdbc2",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "db4eaf01b0f92efe000ec5a3d441dc881d3d4a15ae58ed3939c45e31693fdbc2"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_tape_fp16_packed.spv",
+      "source": "cross_entropy_linear_input_grad_tape_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "13fb743456d5e5ba8bf2f88b720035ffaa2ae5d65839e9d91b52d650748c11b2",
+      "sha256": "2f448de87d69964e3e131515e6bafd35a91caeb4ae0f6b0589ec4006b432ce29",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "2f448de87d69964e3e131515e6bafd35a91caeb4ae0f6b0589ec4006b432ce29"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_tile_reduce.spv",
+      "source": "cross_entropy_linear_input_grad_tile_reduce.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "18ca1cc166c950c64b98d745d9b86ac4dbdd359d162abbc50324f3cbf1f95b30",
+      "sha256": "963af4d6e2dbba05036a0e90ad2d503d08f8702912b626d92279ee83374784f4",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "963af4d6e2dbba05036a0e90ad2d503d08f8702912b626d92279ee83374784f4"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_tile_reduce_tile128.spv",
+      "source": "cross_entropy_linear_input_grad_tile_reduce.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DLM_CE_FUSED_VOCAB_TILE=128"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "18ca1cc166c950c64b98d745d9b86ac4dbdd359d162abbc50324f3cbf1f95b30",
+      "sha256": "c38290f805ddee930bcd44cff6bb2a7239e14039d4c28d32b3b3dbb5fbe8e53a",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "c38290f805ddee930bcd44cff6bb2a7239e14039d4c28d32b3b3dbb5fbe8e53a"
+    },
+    {
+      "artifact": "cross_entropy_linear_input_grad_tile_reduce_tile256.spv",
+      "source": "cross_entropy_linear_input_grad_tile_reduce.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DLM_CE_FUSED_VOCAB_TILE=256"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "18ca1cc166c950c64b98d745d9b86ac4dbdd359d162abbc50324f3cbf1f95b30",
+      "sha256": "32e9337d2b843b91bf694fe72619897a0a8e02fced3d8733d79f33afafd503cc",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "32e9337d2b843b91bf694fe72619897a0a8e02fced3d8733d79f33afafd503cc"
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming.spv",
+      "source": "cross_entropy_linear_row_stats_streaming.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "a23b88689c3e638972420e5d03871f2a7f4d6648aa53447a437f243d76f880e2",
+      "sha256": "bd85c620ecc919247bd3f781b9190a62d85d5e4f1857999a529f10aa6b3a0414",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "bd85c620ecc919247bd3f781b9190a62d85d5e4f1857999a529f10aa6b3a0414"
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_row_stats_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "196cb4e60fff7354107d51f2367d9db306e1de98d84ba27123558f5c7e960429",
+      "sha256": "e11631c68e1d9bd48c998ad4bbad459a876a6a8ff0e6f92644a4d05d07bfbf6b",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "e11631c68e1d9bd48c998ad4bbad459a876a6a8ff0e6f92644a4d05d07bfbf6b"
+    },
+    {
+      "artifact": "cross_entropy_linear_row_stats_streaming_fp16_packed_tape.spv",
+      "source": "cross_entropy_linear_row_stats_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_WRITE_LOGIT_TAPE=1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "196cb4e60fff7354107d51f2367d9db306e1de98d84ba27123558f5c7e960429",
+      "sha256": "654ee9d1e3ff3b07c251e39735e25114c9c8bddd62723c865cca439abe99d33d",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "654ee9d1e3ff3b07c251e39735e25114c9c8bddd62723c865cca439abe99d33d"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "5303033cf1c11d39e1cd7e5b4723aba265858fa8b1f7ef1bad20a5d9f162084e",
+      "sha256": "bc66990209b2c1c12038b7ef5fcfd514cd200353a185fa86a3f096de06de883f",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "bc66990209b2c1c12038b7ef5fcfd514cd200353a185fa86a3f096de06de883f"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "57865f9e66111fb7d6a6c7cbf53255381945d867540e702b8d3b0a191c39cc03",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "57865f9e66111fb7d6a6c7cbf53255381945d867540e702b8d3b0a191c39cc03"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "8c288fbd120ba0bcc36749c5cca644c70769f9d5e343d64f9ea04525fab05557",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "8c288fbd120ba0bcc36749c5cca644c70769f9d5e343d64f9ea04525fab05557"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_native_compute_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4",
+        "-DLM_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "b1e28cc05ccc01f80abb63ef8a9c21d5af694a180322149114af22c8f214bfe6",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "b1e28cc05ccc01f80abb63ef8a9c21d5af694a180322149114af22c8f214bfe6"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "a0bff34e84826c67782dc171ec5bac158e47f771d54a87eac6effaa0c4ada788",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a0bff34e84826c67782dc171ec5bac158e47f771d54a87eac6effaa0c4ada788"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "221760d9d5135847ba73302771040aacf91cb7eda81f0b4a6821183be2393ccb",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "221760d9d5135847ba73302771040aacf91cb7eda81f0b4a6821183be2393ccb"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_streaming_fp16_packed_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_streaming_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "d2416a9381f721e4849cd7ee5b4e8e1a0ebd1230af1586b61c04a4a2e785ede8",
+      "sha256": "5aa9a94d21ba90fbe465f5465200acccd3ac0efbe8546ea5921277664276fb1c",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "5aa9a94d21ba90fbe465f5465200acccd3ac0efbe8546ea5921277664276fb1c"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=8"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "52b0b9cf06c45bec5267ba73270d633e67b5cf0732a10a07d391f8a5ac4a7fc7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "52b0b9cf06c45bec5267ba73270d633e67b5cf0732a10a07d391f8a5ac4a7fc7"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed_rows16.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=16"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "3823f403dd02db03e87bdeba84322a552130d16c0589527c7b96201e6fff5c53",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "3823f403dd02db03e87bdeba84322a552130d16c0589527c7b96201e6fff5c53"
+    },
+    {
+      "artifact": "cross_entropy_linear_weight_grad_tape_fp16_packed_rows4.spv",
+      "source": "cross_entropy_linear_weight_grad_tape_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_DW_VOCAB_ROWS_PER_GROUP=4"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "b716c089bae0507bf2328c31d07148b21e36f1731b6b08c8e3918ef94b872e81",
+      "sha256": "4f644bc1bbb4cdb1d832c8f1e619dfc63ec5c6cdb1d825b2e341c429fbbc8c3d",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "4f644bc1bbb4cdb1d832c8f1e619dfc63ec5c6cdb1d825b2e341c429fbbc8c3d"
+    },
+    {
+      "artifact": "cross_entropy_logits_to_grad_inplace.spv",
+      "source": "cross_entropy_logits_to_grad_inplace.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "b44de54aadd1c2b5f8dcfba99cee650354a3173ba72c7be845d4b2cde334edb8",
+      "sha256": "26071fe827b94e218c62631c07eae808dc3935f4f0efbf11992e04f14a37a16b",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "26071fe827b94e218c62631c07eae808dc3935f4f0efbf11992e04f14a37a16b"
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tape.spv",
+      "source": "cross_entropy_row_stats_tape.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "264e6d48de799eb2e1a8df2691b07609b4e9484beee6efc2b1fc22fdf5f27c74",
+      "sha256": "293c32fe9f5b57b76974549bbf6aa6f3e1eab37d1347881af6df41e9cf8c5809",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "293c32fe9f5b57b76974549bbf6aa6f3e1eab37d1347881af6df41e9cf8c5809"
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tile_partials.spv",
+      "source": "cross_entropy_row_stats_tile_partials.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "9ebab2f3ab281c22b28ecfd490a63515b1209e1f2194bdda9813dd2f4a29ee43",
+      "sha256": "c51abdd0873c2e93cd7bec0eeeda3a7180121fdff651b9bab7fb582b15e747f7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "c51abdd0873c2e93cd7bec0eeeda3a7180121fdff651b9bab7fb582b15e747f7"
+    },
+    {
+      "artifact": "cross_entropy_row_stats_tile_partials_rows16.spv",
+      "source": "cross_entropy_row_stats_tile_partials.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1",
+        "-DLM_CE_VOCAB_TILE=16"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "9ebab2f3ab281c22b28ecfd490a63515b1209e1f2194bdda9813dd2f4a29ee43",
+      "sha256": "72443bc58c920eca8e3e0eafd57cae5b228422f5a0911727a7bec3e22774b99d",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "72443bc58c920eca8e3e0eafd57cae5b228422f5a0911727a7bec3e22774b99d"
+    },
+    {
+      "artifact": "embedding_radix_histogram.spv",
+      "source": "embedding_radix_histogram.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "7f75ae9db9d6f273ef0a7d3dfb856c715447aa6edeef9ad8f036a114128c8ddc",
+      "sha256": "b32136fd918ac6c12e05cadfbcd6ccd7954a5e0e01239d838bfb50dfa1698ad7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "b32136fd918ac6c12e05cadfbcd6ccd7954a5e0e01239d838bfb50dfa1698ad7"
+    },
+    {
+      "artifact": "embedding_radix_prefix.spv",
+      "source": "embedding_radix_prefix.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "060b3eb832306c609547b063a2aa3540ecddf24df4c1eb9257ef10b56b4631b9",
+      "sha256": "6ecc69cb32465d7de75a6cd08719180def4573285f6cad96544d985ed9d0da5e",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "6ecc69cb32465d7de75a6cd08719180def4573285f6cad96544d985ed9d0da5e"
+    },
+    {
+      "artifact": "embedding_radix_scatter.spv",
+      "source": "embedding_radix_scatter.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "381de21dccc4765461454420175bd07e8e110806183d9ca2c56599f7e510570f",
+      "sha256": "dcde3f29b1e899aae84c5ce093199df160f0705acbd5bcbffe5c1a2623272c63",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "dcde3f29b1e899aae84c5ce093199df160f0705acbd5bcbffe5c1a2623272c63"
+    },
+    {
+      "artifact": "embedding_token_sort.spv",
+      "source": "embedding_token_sort.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "bffd29851e13f3d9a70afeaa8467acff3b91e4cf42b7e470d3d7878194e90f23",
+      "sha256": "a9396a5acbcd4e40f3bc9b015869ec36419a307cc896c85677e2d61c030a8814",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a9396a5acbcd4e40f3bc9b015869ec36419a307cc896c85677e2d61c030a8814"
+    },
+    {
+      "artifact": "falcon_h1.spv",
+      "source": "falcon_h1.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "908bf6dbd6e6005cdcdee963b5d566c330f9d53225bc8a97ae27861457a1ee11",
+      "sha256": "5514ae63c15d048e67ad33c1bf89f45cf0e076f52a35bbf7a84d009d0a7ab811",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "5514ae63c15d048e67ad33c1bf89f45cf0e076f52a35bbf7a84d009d0a7ab811"
+    },
+    {
+      "artifact": "gradient_accumulate8.spv",
+      "source": "gradient_accumulate8.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "f6e96ead0d33b509455b0f489abd0cdb30f9fcf743be407c4f886059acc6edf0",
+      "sha256": "96da4d7b8be7cd1dd667ef84c02fc19300119aaeb9f08420a818c3570d63ce79",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "96da4d7b8be7cd1dd667ef84c02fc19300119aaeb9f08420a818c3570d63ce79"
+    },
+    {
+      "artifact": "layer_norm_affine_clamp_backward_inplace.spv",
+      "source": "layer_norm_affine_clamp_backward_inplace.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "086a6be5f73e0df0011c36d278b61a53814fbf011d1831a306cac15d82fdd0cc",
+      "sha256": "0c5943db6c26c880a99c09128db655fe134c2d59658a3cfe188b69f875a7a41c",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "0c5943db6c26c880a99c09128db655fe134c2d59658a3cfe188b69f875a7a41c"
+    },
+    {
+      "artifact": "layer_norm_low_rank_producer_forward_fused.spv",
+      "source": "layer_norm_low_rank_producer_forward_fused.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "fb97a36ca8cace3bde33f2a2c4e7dcad7c8a0c12483341ceddadc9a3fdbba661",
+      "sha256": "91c8702c22dd9815c5035056b0972d0ffaa1da82d7af1dae33c185da70bf8553",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "91c8702c22dd9815c5035056b0972d0ffaa1da82d7af1dae33c185da70bf8553"
+    },
+    {
+      "artifact": "linear_bias_forward.spv",
+      "source": "linear_bias_forward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "6fab6542b702c6636213b4eaacf3eae8e2914e6d9ea735d79553890ac34fedc0",
+      "sha256": "7c456ac82b85510310958a5f810425ac70b46c2c3d014a234e402bb6276b816f",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "7c456ac82b85510310958a5f810425ac70b46c2c3d014a234e402bb6276b816f"
+    },
+    {
+      "artifact": "linear_bias_forward_fp16_packed.spv",
+      "source": "linear_bias_forward_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "ab09c2a2edd1315f27cf17e616594947dcaeeb5dd97711d61c3a4d89e12a3359",
+      "sha256": "4a166c42fc9f79cdf4371596f060964306701012e38b189eadf454042bbda1c4",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "4a166c42fc9f79cdf4371596f060964306701012e38b189eadf454042bbda1c4"
+    },
+    {
+      "artifact": "linear_forward.spv",
+      "source": "linear_forward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "74bcb5013209159af6e4f9f072eed2c8b0897a40072d99b9acdd9fbb0c48f1f5",
+      "sha256": "7f9a3868dac6ed9a2383a80b67dcc3604d0775d4cf3370c7190adbcaa649da49",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "7f9a3868dac6ed9a2383a80b67dcc3604d0775d4cf3370c7190adbcaa649da49"
+    },
+    {
+      "artifact": "linear_forward_fp16_packed.spv",
+      "source": "linear_forward_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "0041bae0c712e3027ef5432fa759c149699dc9ab4ac5b2303ad4782daa896aff",
+      "sha256": "f48d3c6afeddf62585c324772736c6c81a4aa5a432d34f2d4fff4c06ac433a6f",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f48d3c6afeddf62585c324772736c6c81a4aa5a432d34f2d4fff4c06ac433a6f"
+    },
+    {
+      "artifact": "linear_residual_forward.spv",
+      "source": "linear_residual_forward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "486b8e915bc6c3909b64da86ee02a92ff9173a276577b42da4842684f1e43092",
+      "sha256": "53693c9a7d11a7fa6704a92b52f506ce20218da1b575c3646b87aee4ed791120",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "53693c9a7d11a7fa6704a92b52f506ce20218da1b575c3646b87aee4ed791120"
+    },
+    {
+      "artifact": "parameter_matmul_bias_forward.spv",
+      "source": "parameter_matmul_bias_forward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "5649a1dc33c489097cf6fe9c459448ff798b7734ab098709294c55e7bf398085",
+      "sha256": "c9c5051bf07cd71857f33bab23b9188fde1b62429388be56f457b996bfb670b7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "c9c5051bf07cd71857f33bab23b9188fde1b62429388be56f457b996bfb670b7"
+    },
+    {
+      "artifact": "parameter_matmul_bias_forward_fp16_packed.spv",
+      "source": "parameter_matmul_bias_forward_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "efccd6251299b9a7c07f12ffe86ae867baff70c5e87b388eb0c764f6db0b1dcd",
+      "sha256": "a1c1d9eebc688da7bb08ceb05fcb2d5b7abc7726e99f969410d5b76a58f2d9fc",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a1c1d9eebc688da7bb08ceb05fcb2d5b7abc7726e99f969410d5b76a58f2d9fc"
+    },
+    {
+      "artifact": "parameter_matmul_forward.spv",
+      "source": "parameter_matmul_forward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "40601a4db14995da5f05c4fe8dfc84db484c448b028a3b71daab987b94315e5b",
+      "sha256": "f2fd150cc5c724540eeeb39167cabf5870a6fadc672516797e74697efa8a6d8e",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f2fd150cc5c724540eeeb39167cabf5870a6fadc672516797e74697efa8a6d8e"
+    },
+    {
+      "artifact": "parameter_matmul_forward_fp16_packed.spv",
+      "source": "parameter_matmul_forward_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "074de262109b044054657ae9a747698dbca4a27a764d109e97a6d33f82de6aac",
+      "sha256": "d510f319994e94ae598a3d7d0eaf84587d0dc5f1cfea4030b4b2ce447bc24c70",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "d510f319994e94ae598a3d7d0eaf84587d0dc5f1cfea4030b4b2ce447bc24c70"
+    },
+    {
+      "artifact": "parameter_matmul_input_grad.spv",
+      "source": "parameter_matmul_input_grad.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "1745e376d4da698d614fc21114bb2e04946aa69b14a4b1ee87ce274d0ae3b9e1",
+      "sha256": "de1de980649ea716d95dda258257bd4bbb1c48881e728c9083ab68c39c63be9c",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "de1de980649ea716d95dda258257bd4bbb1c48881e728c9083ab68c39c63be9c"
+    },
+    {
+      "artifact": "parameter_matmul_input_grad_fp16_native_compute.spv",
+      "source": "parameter_matmul_input_grad_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DHIERARCHOS_NATIVE_FP16_BACKWARD_COMPUTE=1"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "8522ce4386081153877e9947c252b895b4cbb1a0afee12285a1391b331e063d6",
+      "sha256": "35a466d2cbb8df6b02fd75819191abde241460f1ea47a7dd136692c0ba5520a8",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "35a466d2cbb8df6b02fd75819191abde241460f1ea47a7dd136692c0ba5520a8"
+    },
+    {
+      "artifact": "parameter_matmul_input_grad_fp16_packed.spv",
+      "source": "parameter_matmul_input_grad_fp16_packed.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "8522ce4386081153877e9947c252b895b4cbb1a0afee12285a1391b331e063d6",
+      "sha256": "f7ebde25d3ff758c1e1af7d9a95bb2a2dac49b2accea452f1d7850eb87c35bf6",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "f7ebde25d3ff758c1e1af7d9a95bb2a2dac49b2accea452f1d7850eb87c35bf6"
+    },
+    {
+      "artifact": "rwkv_state_pack_vectors.spv",
+      "source": "rwkv_state_pack_vectors.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "5bb6dd74f93492d86008d74adb7923ee253207b751153488792dfa88086ea0fc",
+      "sha256": "54add23bf4eb580ea32d96834fe2703f2a4eb643c6f509a20aa4670ee8e367d8",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "54add23bf4eb580ea32d96834fe2703f2a4eb643c6f509a20aa4670ee8e367d8"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "0fe71f226143a6b89ef2fbfc072db70d1c639e948a8a146d61225adb17d93965",
+      "sha256": "daa73bedb2b17f1957c90259038eb3fc52243486138ed2381a75200b1d1be3f3",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "daa73bedb2b17f1957c90259038eb3fc52243486138ed2381a75200b1d1be3f3"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "66e1ac5e74c7d60442c0488439bab8c4b93e3b4f696fc60ec929efeda5b86ceb",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "66e1ac5e74c7d60442c0488439bab8c4b93e3b4f696fc60ec929efeda5b86ceb"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2_tile32.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=32"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "ea0b78a87c14d9e0906d9fc636e3e3d8f533022ab713d508360bdc844c5f1246",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "ea0b78a87c14d9e0906d9fc636e3e3d8f533022ab713d508360bdc844c5f1246"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2_tile64.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=64"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "152a2e3edc9007079bdb71c34a01c2aa95faaae5dd853b53ec3ab62bd6d145f3",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "152a2e3edc9007079bdb71c34a01c2aa95faaae5dd853b53ec3ab62bd6d145f3"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse4.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_ROWS=4"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "e1c10dd90cf3ea0d3d0da44617660c30bf946c4e608ce2c3183f0582ea4ac243",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "e1c10dd90cf3ea0d3d0da44617660c30bf946c4e608ce2c3183f0582ea4ac243"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse4_tile32.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=32",
+        "-DRWKV_WEIGHT_REUSE_ROWS=4"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "62a4a54510a377a63e6b5b20d9528c71fb17ae9319e42871e7d7b455a13f5a7e",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "62a4a54510a377a63e6b5b20d9528c71fb17ae9319e42871e7d7b455a13f5a7e"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse4_tile64.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=64",
+        "-DRWKV_WEIGHT_REUSE_ROWS=4"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "8d33641b7f4f6110958d4e23a70f27686a3dff7bd5bcc826a9b94a331f6831ea",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "8d33641b7f4f6110958d4e23a70f27686a3dff7bd5bcc826a9b94a331f6831ea"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse8.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_ROWS=8"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "4dd7fd83381e19c0bda3b293a3b61aeb36e8d16487aa54d50abee8aaaa3f5179",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "4dd7fd83381e19c0bda3b293a3b61aeb36e8d16487aa54d50abee8aaaa3f5179"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse8_tile32.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=32",
+        "-DRWKV_WEIGHT_REUSE_ROWS=8"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "fd0b34a3843889fb8de66abf7583e331ef4f1ac12ec1eec5a613af373a3c6cee",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "fd0b34a3843889fb8de66abf7583e331ef4f1ac12ec1eec5a613af373a3c6cee"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse8_tile64.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_weight_reuse2.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_WEIGHT_REUSE_TILE=64",
+        "-DRWKV_WEIGHT_REUSE_ROWS=8"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "b014bddf6adca219e24fcd3bd750298497b9b8a67d07d62ed891fc222a97d99b",
+      "sha256": "8e66f8237b468bb0dd7083f56cd89934ebdd57fbb478cd2154146e9651ade302",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "8e66f8237b468bb0dd7083f56cd89934ebdd57fbb478cd2154146e9651ade302"
+    },
+    {
+      "artifact": "rwkv_time_mix3_linear3_key_state_forward_packed_fast_wg32.spv",
+      "source": "rwkv_time_mix3_linear3_key_state_forward_packed_fast.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-DRWKV_PACKED_FAST_WORKGROUP_SIZE=32"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "0fe71f226143a6b89ef2fbfc072db70d1c639e948a8a146d61225adb17d93965",
+      "sha256": "24d6b77af3ff06068b71b4261331725b7ddf4fe0fdd8ff32d62cf85c6e66492e",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "24d6b77af3ff06068b71b4261331725b7ddf4fe0fdd8ff32d62cf85c6e66492e"
+    },
+    {
+      "artifact": "transformer_attention_backward.spv",
+      "source": "transformer_attention_backward.comp",
+      "compiler": "glslangValidator",
+      "flags": [
+        "-V",
+        "--target-env",
+        "vulkan1.0",
+        "-Ishaders"
+      ],
+      "target_env": "vulkan1.0",
+      "storage_policy": {
+        "local_size": [
+          1,
+          1,
+          1
+        ],
+        "max_workgroup_variables": 0
+      },
+      "source_sha256": "925d2e43da9f7dedd2676e7fe8748cfa64e95ac4e228948ebef661f013ec8691",
+      "sha256": "5b16ecadc615098834186cf253291cd148ca4310aa4f9953157839677a06f549",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "5b16ecadc615098834186cf253291cd148ca4310aa4f9953157839677a06f549",
+      "storage_usage": {
+        "workgroup_variables": 0,
+        "local_size": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "artifact": "transformer_attention_forward.spv",
+      "source": "transformer_attention_forward.comp",
+      "compiler": "glslangValidator",
+      "flags": [
+        "-V",
+        "--target-env",
+        "vulkan1.0",
+        "-Ishaders"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "02474e643ca6f137534619a1611ed47e66371588c53f7d3ebdd3da70de3286c0",
+      "sha256": "02cbbd03d82b9097dc25fdb066b69001b0abf3295624e1a966c9a61c870d15ec",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "02cbbd03d82b9097dc25fdb066b69001b0abf3295624e1a966c9a61c870d15ec"
+    },
+    {
+      "artifact": "transformer_gated_delta_qk_norm_backward.spv",
+      "source": "transformer_gated_delta_qk_norm_backward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "0788fb7d59df65df292daf28f3aea667b171874cf96009012624588085989a38",
+      "sha256": "57b9bc6af9b07a22686b1d6d5537d05cc421d86f3d59acc2b367ec0d00b95f12",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "57b9bc6af9b07a22686b1d6d5537d05cc421d86f3d59acc2b367ec0d00b95f12"
+    },
+    {
+      "artifact": "transformer_gated_delta_recurrent_packed_backward.spv",
+      "source": "transformer_gated_delta_recurrent_packed_backward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "d2d6c211757cc02bd1cdfcb7d54800411dbe08af28e33abaa7da1d1efc03eb3d",
+      "sha256": "9d2dd19de0c90de9ea839d7a53943da0273744b415fd86b402416fd432572dcc",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "9d2dd19de0c90de9ea839d7a53943da0273744b415fd86b402416fd432572dcc"
+    },
+    {
+      "artifact": "transformer_glm5_kda_recurrent_packed_backward.spv",
+      "source": "transformer_glm5_kda_recurrent_packed_backward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "638b814086a3595dedf42b216f0788611b201e21e590f5ac0668aeaeb52f4197",
+      "sha256": "7e7bc4f8feabcea48139851af87ce463dd26d8bbd8a1e088617fd435fbd275fc",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "7e7bc4f8feabcea48139851af87ce463dd26d8bbd8a1e088617fd435fbd275fc"
+    },
+    {
+      "artifact": "transformer_kimi_attn_res_mix.spv",
+      "source": "transformer_kimi_attn_res_mix.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "2056c84200d31c539f0f7d837293c7a0d01f4fe8ce6c8339afbb78d4fbcfe83a",
+      "sha256": "ef0ff13d3c4a50e40d0cc2f61fe24ef326285207af44ffeb86fa5f0207100549",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "ef0ff13d3c4a50e40d0cc2f61fe24ef326285207af44ffeb86fa5f0207100549"
+    },
+    {
+      "artifact": "transformer_kimi_attn_res_mix_backward_candidate.spv",
+      "source": "transformer_kimi_attn_res_mix_backward_candidate.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "2be396fc7b526a9b75749da563cb67f4bc5a86d62fb274996c0fa13060233f9f",
+      "sha256": "87f13e66b34a922c581d67fb71eb19a127aa57acfd93c79e90fdafcf6f80b6b2",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "87f13e66b34a922c581d67fb71eb19a127aa57acfd93c79e90fdafcf6f80b6b2"
+    },
+    {
+      "artifact": "transformer_kimi_attn_res_mix_backward_prob.spv",
+      "source": "transformer_kimi_attn_res_mix_backward_prob.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "890ec34798888498e2f31055e009fd6430116cf7e3b26bd9c0208a54287ce3c1",
+      "sha256": "d64205d21197637d8add4f1f226678d226058f0516eb11c82f38214bc0f77b13",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "d64205d21197637d8add4f1f226678d226058f0516eb11c82f38214bc0f77b13"
+    },
+    {
+      "artifact": "transformer_kimi_attn_res_softmax_backward.spv",
+      "source": "transformer_kimi_attn_res_softmax_backward.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "f3dea1168ca36d2c27995af23d39e9e769cb9585abd08f8b7076753b137f5c15",
+      "sha256": "ae4399d51848137686ba846d149fa598c6ffcdb01a00606e612e987e4f2402c4",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "ae4399d51848137686ba846d149fa598c6ffcdb01a00606e612e987e4f2402c4"
+    },
+    {
+      "artifact": "transformer_moe_hash_router.spv",
+      "source": "transformer_moe_hash_router.comp",
+      "compiler": "glslangValidator",
+      "flags": [
+        "-V",
+        "--target-env",
+        "vulkan1.0",
+        "-Ishaders"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "21b4936644ad040c87a89c2233caf21b6491f1ecd27a0a8c2ddec461801a6f76",
+      "sha256": "686249030d0772525b756ec80e903c1acbcb3191da59a14f633c515921ab6ce2",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "686249030d0772525b756ec80e903c1acbcb3191da59a14f633c515921ab6ce2"
+    },
+    {
+      "artifact": "transformer_moe_row_dot.spv",
+      "source": "transformer_moe_row_dot.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "cdb3cfcf48f842e5c4da89c89e12281ec0d126d3b55581c74b1816e3f0001201",
+      "sha256": "2e6aeac1de70cfb34e7e4972f4f10d4199dd2bc89026ebb396e328fbd3ac84d7",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "2e6aeac1de70cfb34e7e4972f4f10d4199dd2bc89026ebb396e328fbd3ac84d7"
+    },
+    {
+      "artifact": "transformer_offset_position_grad.spv",
+      "source": "transformer_offset_position_grad.comp",
+      "compiler": "glslc",
+      "flags": [
+        "--target-env=vulkan1.1"
+      ],
+      "target_env": "vulkan1.1",
+      "source_sha256": "1556c6924fc75869e760dfb9d0b4264d922174f1353719bb1b88fb784f209bc5",
+      "sha256": "5d46397bc46da1d5a9224f52b204de67dc9b34499073c471f392b707874f560b",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "5d46397bc46da1d5a9224f52b204de67dc9b34499073c471f392b707874f560b"
+    },
+    {
+      "artifact": "transformer_qwen_gdn_gate_norm_param_grad.spv",
+      "source": "transformer_qwen_gdn_gate_norm_param_grad.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-O"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "f5ff98c6982ad2fad7841f782ae48ffe9937a6371a4084ccd8016ac8aeec705a",
+      "sha256": "3f25c1bbedcf466d4f7588598004299a1e7fa2b4386001dd9c6490627def9c7e",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "3f25c1bbedcf466d4f7588598004299a1e7fa2b4386001dd9c6490627def9c7e"
+    },
+    {
+      "artifact": "transformer_rms_norm_input_grad.spv",
+      "source": "transformer_rms_norm_input_grad.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-O"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "cd1dcde714004d13b0fce1c9c7a82681ebd2f0bf532d107f4f55339a120dc3c1",
+      "sha256": "a17f9f3deccd54b695fd63f9c9d637b073bf2b6987db75428e4fe3366e34d75b",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "a17f9f3deccd54b695fd63f9c9d637b073bf2b6987db75428e4fe3366e34d75b"
+    },
+    {
+      "artifact": "transformer_rms_norm_input_grad_residual.spv",
+      "source": "transformer_rms_norm_input_grad_residual.comp",
+      "compiler": "glslc",
+      "flags": [
+        "-O"
+      ],
+      "target_env": "vulkan1.0",
+      "source_sha256": "7f7faa3352a7ecc7b136de19037116c363e861f74c3e291ac1c303e96ea4e14e",
+      "sha256": "4fb1fc28673015b8b753e4f3215fb5ee3fc993c7c064d13b1b2d25a949aa5417",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "4fb1fc28673015b8b753e4f3215fb5ee3fc993c7c064d13b1b2d25a949aa5417"
+    },
+    {
+      "artifact": "transformer_uniform_jitter.spv",
+      "source": "transformer_uniform_jitter.comp",
+      "compiler": "glslc",
+      "flags": [],
+      "target_env": "vulkan1.0",
+      "source_sha256": "1b3a34471f17b2bd42cd6d05752fbba57e54182df19c93c03932b5f75f11144d",
+      "sha256": "d34cbaefc636f2f162d82d975f97397b81bd12b67f1633d44ff6342161356fa1",
+      "compile_exit": 0,
+      "matches": true,
+      "valid": true,
+      "policy_matches": true,
+      "rebuilt_sha256": "d34cbaefc636f2f162d82d975f97397b81bd12b67f1633d44ff6342161356fa1"
+    }
+  ]
+}

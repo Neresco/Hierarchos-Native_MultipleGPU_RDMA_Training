@@ -73,16 +73,31 @@ void main() {
         return;
     }
     float dot = 0.0;
-    for (uint col = 0; col < pc.dim; ++col) {
-        float weighted_grad = grad_output[base + col] * (weight[parameter_base + col] + pc.weight_offset);
-        if (pc.pow_rstd != 0u || pc.unfused_products != 0u) {
-            // Keep architectures whose reference materializes the elementwise
-            // product non-contracted for the same reason as the forward square
-            // reduction above.
+    if (pc.pow_rstd != 0u && pc.unfused_products == 2u) {
+        // Select the eight-lane topology before reading the row. Its
+        // result replaces the scalar dot, so a scalar prepass is wasted.
+        precise float lanes[8];
+        for (uint j = 0u; j < 8u; ++j) lanes[j] = 0.0;
+        for (uint col = 0u; col < pc.dim; ++col) {
+            precise float weighted_grad = grad_output[base + col]
+                * (weight[parameter_base + col] + pc.weight_offset);
             precise float product = weighted_grad * x[base + col];
-            dot += product;
-        } else {
-            dot = fma(weighted_grad, x[base + col], dot);
+            lanes[col & 7u] += product;
+        }
+        dot = 0.0;
+        for (uint j = 0u; j < 8u; ++j) dot += lanes[j];
+    } else {
+        for (uint col = 0; col < pc.dim; ++col) {
+            float weighted_grad = grad_output[base + col] * (weight[parameter_base + col] + pc.weight_offset);
+            if (pc.pow_rstd != 0u || pc.unfused_products != 0u) {
+                // Keep architectures whose reference materializes the elementwise
+                // product non-contracted for the same reason as the forward square
+                // reduction above.
+                precise float product = weighted_grad * x[base + col];
+                dot += product;
+            } else {
+                dot = fma(weighted_grad, x[base + col], dot);
+            }
         }
     }
     if (pc.pow_rstd != 0u) {
@@ -92,22 +107,6 @@ void main() {
         // In particular, preserve pow(mean, -1.5) rather than replacing it
         // algebraically with rstd^3. The two are real-number equivalent but
         // differ by observable FP32 ulps after AdamW.
-        // Mode 1 means "materialize products" and intentionally keeps the
-        // source-order reduction above. Mode 2 is the explicit eight-lane
-        // reduction used by vectorized CPU RMSNorm backward, including Gemma4
-        // pow-RMS on the local strict PEFT oracle.
-        if (pc.unfused_products == 2u) {
-            precise float lanes[8];
-            for (uint j = 0u; j < 8u; ++j) lanes[j] = 0.0;
-            for (uint col = 0u; col < pc.dim; ++col) {
-                precise float weighted_grad = grad_output[base + col]
-                    * (weight[parameter_base + col] + pc.weight_offset);
-                precise float product = weighted_grad * x[base + col];
-                lanes[col & 7u] += product;
-            }
-            dot = 0.0;
-            for (uint j = 0u; j < 8u; ++j) dot += lanes[j];
-        }
         // Do not derive the -3/2 power from the rounded -1/2 result. PyTorch
         // autograd differentiates the original pow(mean, -0.5) operation and
         // evaluates pow(mean, -1.5) independently; reusing rstd changes the
