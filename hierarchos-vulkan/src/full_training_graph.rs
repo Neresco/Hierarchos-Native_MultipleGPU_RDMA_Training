@@ -8129,6 +8129,9 @@ pub struct HierarchosTrainingGraph {
     gradient_accumulate: vulkan::ComputeKernel,
     gradient_accumulate_scaled: vulkan::ComputeKernel,
     worker_drift_fanin_fusion: bool,
+    /// Pre-gathered optimizer state for ZeRO-1 export. When set, `full_model_optimizer_state`
+    /// returns this instead of reading from the (potentially sharded) GPU buffers.
+    zero1_gathered_optimizer_state: Option<AdamWOptimizerState>,
 }
 
 impl HierarchosTrainingGraph {
@@ -9419,6 +9422,7 @@ impl HierarchosTrainingGraph {
                 "HIERARCHOS_VULKAN_DISABLE_WORKER_DRIFT_FANIN_FUSION",
             )
             .is_none(),
+            zero1_gathered_optimizer_state: None,
         };
         graph.validate_shared_identity()?;
         Ok(graph)
@@ -18466,7 +18470,113 @@ impl HierarchosTrainingGraph {
     /// Slot names are the exact model-package tensor names, making this state
     /// directly resumable alongside the ordinary PyTorch-layout SafeTensors.
     pub fn full_model_optimizer_state(&self) -> Result<AdamWOptimizerState> {
+        if let Some(ref state) = self.zero1_gathered_optimizer_state {
+            return Ok(state.clone());
+        }
         self.full_model_optimizer.state_snapshot()
+    }
+
+    /// Read every slot's exp_avg/exp_avg_sq moments into flat owner-ordered
+    /// buffers for a ZeRO-1 export allgather. Owned slots read their full
+    /// GPU buffer; non-owned slots read their 1-element stub (the value is
+    /// filled from peers during [`Self::gather_zero1_optimizer_state`]).
+    pub fn read_optimizer_state_flat_in_owner_order(
+        &self,
+        world_size: usize,
+    ) -> Result<(
+        Vec<f32>,
+        Vec<f32>,
+        Vec<std::ops::Range<usize>>,
+    )> {
+        let layout = self.full_model_optimizer.gradient_layout();
+        let owners = Self::sharded_owner_segments(world_size, layout.len());
+        let mut exp_avg_flat = Vec::with_capacity(layout.iter().map(|(_, l)| *l).sum::<usize>());
+        let mut exp_avg_sq_flat = Vec::with_capacity(exp_avg_flat.capacity());
+        let mut segments = Vec::with_capacity(world_size);
+        for owner in &owners {
+            let start = exp_avg_flat.len();
+            for &tensor_index in owner {
+                let (_, len, _, _) = self
+                    .full_model_optimizer
+                    .slot_metadata_by_index(tensor_index)
+                    .context("optimizer slot index out of range")?;
+                let (exp_avg, exp_avg_sq) = self
+                    .full_model_optimizer
+                    .slot_moments_by_index(tensor_index)
+                    .context("optimizer slot moments out of range")?;
+                // Non-owned slots have 1-element stub buffers (ZeRO-1 sharding).
+                // Read whatever the stub holds; the allgather fills the full
+                // tensor from the owning rank. Use the buffer's actual capacity
+                // for the readback, not slot.len.
+                let buf_len = exp_avg.f32_capacity();
+                let readback = GpuBuffer::uninitialized_host_f32(&self.device, buf_len)?;
+                let readback_sq = GpuBuffer::uninitialized_host_f32(&self.device, buf_len)?;
+                let mut commands = vulkan::ComputeBatch::new(&self.device)?;
+                commands.readback_f32(exp_avg, &readback, buf_len)?;
+                commands.readback_f32(exp_avg_sq, &readback_sq, buf_len)?;
+                commands.submit()?;
+                let vals = readback.read_f32(buf_len)?;
+                let vals_sq = readback_sq.read_f32(buf_len)?;
+                // Pad with zeros up to slot.len for non-owned stubs so the
+                // flat buffer has the correct total size for the allgather.
+                exp_avg_flat.extend_from_slice(&vals);
+                exp_avg_flat.resize(exp_avg_flat.len() + len - buf_len, 0.0);
+                exp_avg_sq_flat.extend_from_slice(&vals_sq);
+                exp_avg_sq_flat.resize(exp_avg_sq_flat.len() + len - buf_len, 0.0);
+            }
+            segments.push(start..exp_avg_flat.len());
+        }
+        Ok((exp_avg_flat, exp_avg_sq_flat, segments))
+    }
+
+    /// Ring-allgather the ZeRO-1 optimizer moments and rebuild the full
+    /// [`AdamWOptimizerState`] on this rank. Call from every rank after the
+    /// final training window and before checkpoint export so the export path
+    /// can bypass the 1-element stub buffers on non-owned slots.
+    pub fn gather_zero1_optimizer_state(
+        &mut self,
+        ring: &mut crate::distributed::RingTransport,
+        rank: usize,
+        world_size: usize,
+    ) -> Result<()> {
+        let (exp_avg_flat, exp_avg_sq_flat, segments) =
+            self.read_optimizer_state_flat_in_owner_order(world_size)?;
+        let (exp_avg, exp_avg_sq) = if world_size == 1 {
+            (exp_avg_flat, exp_avg_sq_flat)
+        } else {
+            let mut ea = exp_avg_flat;
+            let mut eas = exp_avg_sq_flat;
+            crate::distributed::ring_allgather_sharded(
+                ring, rank, world_size, &segments, &mut ea,
+            )?;
+            crate::distributed::ring_allgather_sharded(
+                ring, rank, world_size, &segments, &mut eas,
+            )?;
+            (ea, eas)
+        };
+        let (global_step, slot_steps) = self.full_model_optimizer.exact_step_metadata()?;
+        let layout = self.full_model_optimizer.gradient_layout();
+        let mut cursor = 0usize;
+        let mut slots = Vec::with_capacity(layout.len());
+        for (tensor_index, (_, len)) in layout.iter().enumerate() {
+            let (name, _, decay_class, _) = self
+                .full_model_optimizer
+                .slot_metadata_by_index(tensor_index)
+                .context("optimizer slot index out of range")?;
+            slots.push(AdamWOptimizerSlotState {
+                name,
+                step: slot_steps[tensor_index],
+                decay_class: Some(decay_class),
+                exp_avg: exp_avg[cursor..cursor + len].to_vec(),
+                exp_avg_sq: exp_avg_sq[cursor..cursor + len].to_vec(),
+            });
+            cursor += len;
+        }
+        self.zero1_gathered_optimizer_state = Some(AdamWOptimizerState {
+            step: global_step,
+            slots,
+        });
+        Ok(())
     }
 
     /// Rebuild the full-model optimizer with ZeRO-1 sharded AdamW moments:

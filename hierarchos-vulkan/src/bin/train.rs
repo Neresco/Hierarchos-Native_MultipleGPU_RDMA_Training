@@ -6149,6 +6149,15 @@ fn run_distributed_epochs(
         }
     }
 
+    // ZeRO-1: ring-allgather the sharded optimizer moments before checkpoint
+    // export so rank 0 has the full state instead of 1-element stubs.
+    if let DistributedTopology::Zero1 { ring } = &mut topology {
+        graph
+            .gather_zero1_optimizer_state(ring, rank, world_size)
+            .context("ZeRO-1 optimizer state export allgather")?;
+        eprintln!("zero1_export_optimizer_state_allgathered rank={rank}");
+    }
+
     if is_primary {
         let previous_context = vec![0.0f32; context_len];
         let target_context = vec![0.0f32; context_len];

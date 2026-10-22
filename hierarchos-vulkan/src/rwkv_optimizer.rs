@@ -2067,7 +2067,7 @@ impl RwkvPersistentAdamW {
     /// row; entries whose device mirror was invalidated by a host-owned path
     /// continue to use their exact Rust value. This is the synchronization seam
     /// for checkpointing/telemetry after queue-resident optimizer windows.
-    fn exact_step_metadata(&self) -> Result<(u32, Vec<u32>)> {
+    fn exact_step_metadata_impl(&self) -> Result<(u32, Vec<u32>)> {
         if self.host_step_metadata_authoritative {
             return Ok((self.step, self.slots.iter().map(|slot| slot.step).collect()));
         }
@@ -3944,6 +3944,41 @@ impl RwkvPersistentAdamW {
             });
         }
         Ok(AdamWOptimizerState { step, slots })
+    }
+
+    /// Resolve the authoritative global and per-slot AdamW step clocks. Used by
+    /// the ZeRO-1 export allgather so non-owning ranks can contribute correct
+    /// step metadata without reading each slot's moment buffers.
+    pub fn exact_step_metadata(&self) -> Result<(u32, Vec<u32>)> {
+        self.exact_step_metadata_impl()
+    }
+
+    /// Slot metadata (canonical registry order) for the ZeRO-1 export
+    /// allgather. Returns the tensor name, element count, decay class and the
+    /// authoritative per-slot Adam clock, without exposing the GPU buffers.
+    pub fn slot_metadata_by_index(
+        &self,
+        index: usize,
+    ) -> Option<(String, usize, RwkvDecayClass, u32)> {
+        self.slots.get(index).map(|slot| {
+            (
+                slot.name.clone(),
+                slot.len,
+                slot.decay_class,
+                slot.step,
+            )
+        })
+    }
+
+    /// Borrow the exp_avg/exp_avg_sq moment buffers of a slot by index.
+    /// Used by the ZeRO-1 export allgather to read the owned shard.
+    pub fn slot_moments_by_index(
+        &self,
+        index: usize,
+    ) -> Option<(&GpuBuffer, &GpuBuffer)> {
+        self.slots
+            .get(index)
+            .map(|slot| (&slot.exp_avg, &slot.exp_avg_sq))
     }
 
     /// Snapshot the canonical pending-gradient registry in exact optimizer
