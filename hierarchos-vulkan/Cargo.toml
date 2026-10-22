@@ -47,6 +47,10 @@ name = "hierarchos-vulkan-package-step"
 path = "src/bin/package_step.rs"
 
 [[bin]]
+name = "hierarchos-vulkan-rendezvous"
+path = "src/bin/rendezvous.rs"
+
+[[bin]]
 name = "hierarchos-vulkan-optimizer-inspect"
 path = "src/bin/optimizer_inspect.rs"
 

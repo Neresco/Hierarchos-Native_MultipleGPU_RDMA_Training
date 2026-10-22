@@ -1516,6 +1516,11 @@ pub(crate) struct RwkvPersistentAdamW {
     step_metadata_readback: GpuBuffer,
     slots: Vec<OptimizerSlot>,
     permanently_inactive_names: HashSet<String>,
+    /// ZeRO-1 sharding flag. When true, the gradient clip norm is computed over
+    /// the FULL gradient (all slots) so every rank derives the identical clip
+    /// coefficient; the sharded exclusion (permanently_inactive_names) applies
+    /// only to the AdamW step, not the norm.
+    zero1_sharded: bool,
     gradient_accumulate: vulkan::ComputeKernel,
     gradient_accumulate4: Option<vulkan::ComputeKernel>,
     gradient_accumulate8: Option<vulkan::ComputeKernel>,
@@ -1741,9 +1746,42 @@ impl RwkvPersistentAdamW {
             device,
             slots,
             permanently_inactive_names: HashSet::new(),
+            zero1_sharded: false,
             parameter_mirror_refresher: None,
             generation_guard: Arc::new(OptimizerGenerationGuard::default()),
         })
+    }
+
+    /// ZeRO-1 sharded construction: rank `rank` of `world_size` keeps full
+    /// AdamW moments (`exp_avg`, `exp_avg_sq`) only for optimizer slots whose
+    /// index satisfies `i % world_size == rank`. Non-owned slots get 1-element
+    /// moment buffers (minimal VRAM) and are registered in
+    /// `permanently_inactive_names`, so host-controlled step paths skip them
+    /// entirely and device-controlled paths pass `is_active == 0`, whose
+    /// shaders return before touching the moment buffers.
+    ///
+    /// `accumulated_grad` stays full-sized for every slot: the forward/back
+    /// pass and the full-gradient ring allreduce operate on complete buffers.
+    pub(crate) fn new_sharded(
+        device: VulkanDevice,
+        trainables: &[RwkvTrainableRef<'_>],
+        rank: usize,
+        world_size: usize,
+    ) -> Result<Self> {
+        anyhow::ensure!(world_size >= 2, "sharded optimizer requires at least 2 ranks");
+        anyhow::ensure!(rank < world_size, "sharded optimizer rank out of range");
+        let mut optimizer = Self::new(device.clone(), trainables)?;
+        optimizer.zero1_sharded = true;
+        for (slot_index, slot) in optimizer.slots.iter_mut().enumerate() {
+            if slot_index % world_size == rank {
+                continue;
+            }
+            // Release the full-size moments and replace with 1-element stubs.
+            slot.exp_avg = GpuBuffer::zeros_f32(&device, 1)?;
+            slot.exp_avg_sq = GpuBuffer::zeros_f32(&device, 1)?;
+            optimizer.permanently_inactive_names.insert(slot.name.clone());
+        }
+        Ok(optimizer)
     }
 
     /// Restrict optimizer mutation to tensors whose canonical name is exactly
@@ -1818,6 +1856,17 @@ impl RwkvPersistentAdamW {
         let mut inactive = self.permanently_inactive_names.clone();
         inactive.extend(requested.into_iter().map(str::to_string));
         Ok(inactive)
+    }
+
+    /// Inactive set for the gradient clip NORM. In ZeRO-1 mode this returns only
+    /// the explicitly requested names (NOT permanently_inactive), so the norm
+    /// spans the full gradient on every rank -> identical clip coefficient.
+    fn norm_inactive_names(&self, inactive_names: &[&str]) -> Result<HashSet<String>> {
+        if self.zero1_sharded {
+            Ok(inactive_names.iter().map(|s| s.to_string()).collect())
+        } else {
+            self.effective_inactive_names(inactive_names)
+        }
     }
 
     /// Allocate compact execution mirrors for selected canonical trainables and
@@ -2229,7 +2278,7 @@ impl RwkvPersistentAdamW {
         if let Some((name, gradient)) = gradient_override {
             self.validate_gradient_override(name, gradient)?;
         }
-        let inactive = self.effective_inactive_names(inactive_names)?;
+        let inactive = self.norm_inactive_names(inactive_names)?;
         let gradients = self
             .slots
             .iter()

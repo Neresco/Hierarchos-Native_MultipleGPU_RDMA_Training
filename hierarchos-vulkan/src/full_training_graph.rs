@@ -7177,7 +7177,7 @@ pub struct PendingGradientShardMetadata {
     optimizer_tensor_count: usize,
     training_step: Option<u64>,
     normalization: HierarchosSequenceGradientNormalization,
-    consumed_token_count: usize,
+    pub consumed_token_count: usize,
     consumed_supervision_mass: Option<f32>,
     target_token_count: usize,
     target_supervision_mass: Option<f32>,
@@ -7187,7 +7187,7 @@ pub struct PendingGradientShardMetadata {
     ltm_alignment_cost_total: f32,
 }
 
-struct PendingGradientMergePlan {
+pub struct PendingGradientMergePlan {
     accumulation: FullModelAccumulationNormalizationState,
     sampled_rows_in_window: u64,
     sampled_rows_in_controller_microbatch: u64,
@@ -18469,6 +18469,55 @@ impl HierarchosTrainingGraph {
         self.full_model_optimizer.state_snapshot()
     }
 
+    /// Rebuild the full-model optimizer with ZeRO-1 sharded AdamW moments:
+    /// only slots whose index satisfies `i % world_size == rank` keep full
+    /// first/second moments; the rest get 1-element stubs and are permanently
+    /// inactive. Parameters and accumulated gradients are untouched, so this
+    /// must run before any accumulation window opens. Intended for the
+    /// `--distributed-mode zero1` trainer path.
+    pub fn shard_full_model_optimizer(&mut self, rank: usize, world_size: usize) -> Result<()> {
+        anyhow::ensure!(
+            !self.full_model_accumulation_open,
+            "optimizer sharding requires a closed accumulation window"
+        );
+        let Self {
+            h_recurrent,
+            l_recurrent,
+            projections,
+            token_frontend,
+            output,
+            device,
+            ..
+        } = self;
+        let registry = full_model_named_trainables(
+            h_recurrent,
+            l_recurrent,
+            projections,
+            token_frontend.as_ref(),
+            output,
+        )?;
+        let trainables = registry
+            .iter()
+            .map(NamedTrainable::as_trainable)
+            .collect::<Vec<_>>();
+        let optimizer = RwkvPersistentAdamW::new_sharded(
+            device.clone(),
+            &trainables,
+            rank,
+            world_size,
+        )?;
+        self.full_model_optimizer = optimizer;
+        Ok(())
+    }
+
+    /// Host/device exact global Adam step without reading moment payloads.
+    /// Unlike [`Self::full_model_optimizer_state`], this stays valid for
+    /// ZeRO-1 sharded optimizers whose non-owned slots keep 1-element moment
+    /// stubs.
+    pub fn full_model_optimizer_step(&self) -> Result<u32> {
+        Ok(self.full_model_optimizer.current_step())
+    }
+
     /// Read the canonical in-flight gradient registry at a microbatch boundary.
     /// The tied LM-head entry is sourced from whichever physical topology owns
     /// it for the current window, while the returned names remain portable.
@@ -18854,7 +18903,7 @@ impl HierarchosTrainingGraph {
         Ok(())
     }
 
-    fn plan_pending_gradient_merge(
+    pub fn plan_pending_gradient_merge(
         &self,
         shard: &PendingGradientShardMetadata,
     ) -> Result<PendingGradientMergePlan> {
@@ -19084,7 +19133,7 @@ impl HierarchosTrainingGraph {
         }
     }
 
-    fn commit_pending_gradient_merge(&mut self, plan: PendingGradientMergePlan) {
+    pub fn commit_pending_gradient_merge(&mut self, plan: PendingGradientMergePlan) {
         self.full_model_accumulation_normalization = Some(plan.accumulation);
         self.ltm_alignment_controller.sampled_rows_in_window = plan.sampled_rows_in_window;
         self.ltm_alignment_controller
@@ -20234,6 +20283,199 @@ impl HierarchosTrainingGraph {
         })
     }
 
+    /// Read every pending gradient value into a single flat host vector, in
+    /// optimizer-tensor order. Used by the Phase R3 ring allreduce to move the
+    /// whole window's raw gradient into one buffer for the collective sum.
+    pub fn read_full_model_pending_gradients_flat(
+        &self,
+        source: &HierarchosPendingGradientTransportSource,
+    ) -> Result<Vec<f32>> {
+        let source_layout = source.optimizer.gradient_layout();
+        let total: usize = source_layout.iter().map(|(_, len)| *len).sum();
+        let mut flat = Vec::with_capacity(total);
+        for (tensor_index, (_, tensor_len)) in source_layout.iter().enumerate() {
+            let mut offset = 0usize;
+            while offset < *tensor_len {
+                let len = self
+                    .optimizer_transport_chunk_values
+                    .min(*tensor_len - offset)
+                    .max(1);
+                let readback = GpuBuffer::uninitialized_host_f32(&source.device, len)?;
+                let mut commands = vulkan::ComputeBatch::new(&source.device)?;
+                source.optimizer.record_gradient_range_readback(
+                    &mut commands,
+                    tensor_index,
+                    offset,
+                    len,
+                    &readback,
+                )?;
+                commands.submit()?;
+                flat.extend_from_slice(&readback.read_f32(len)?);
+                offset += len;
+            }
+        }
+        Ok(flat)
+    }
+
+    /// Write a flat host vector back into the pending gradient tensors, in
+    /// optimizer-tensor order. The inverse of
+    /// `read_full_model_pending_gradients_flat`; used by the ring allreduce to
+    /// store the cross-rank sum before the local optimizer step.
+    pub fn write_full_model_pending_gradients_flat(
+        &self,
+        source: &HierarchosPendingGradientTransportSource,
+        flat: &[f32],
+    ) -> Result<()> {
+        let source_layout = source.optimizer.gradient_layout();
+        let mut cursor = 0usize;
+        for (tensor_index, (_, tensor_len)) in source_layout.iter().enumerate() {
+            let mut offset = 0usize;
+            while offset < *tensor_len {
+                let len = self
+                    .optimizer_transport_chunk_values
+                    .min(*tensor_len - offset)
+                    .max(1);
+                let slice = &flat[cursor..cursor + len];
+                let write_buf = GpuBuffer::uninitialized_host_f32(&source.device, len)?;
+                write_buf.write_f32(slice)?;
+                let mut commands = vulkan::ComputeBatch::new(&source.device)?;
+                source.optimizer.record_gradient_range_write(
+                    &mut commands,
+                    tensor_index,
+                    offset,
+                    len,
+                    &write_buf,
+                )?;
+                commands.submit()?;
+                cursor += len;
+                offset += len;
+            }
+        }
+        Ok(())
+    }
+
+    /// Segment layout for ZeRO-1 owner-ordered parameter transfer: tensor i
+    /// is owned by rank i % world_size, and the flat buffer is laid out as
+    /// [rank0 owned tensors][rank1 owned]...[rank n-1 owned] in tensor order.
+    fn sharded_owner_segments(world_size: usize, total_tensors: usize) -> Vec<Vec<usize>> {
+        let mut owners: Vec<Vec<usize>> = vec![Vec::new(); world_size];
+        for i in 0..total_tensors {
+            owners[i % world_size].push(i);
+        }
+        owners
+    }
+
+    /// Read the parameters owned by each rank (ZeRO-1: tensor i is owned by
+    /// rank i % world_size) into a single flat host buffer laid out in
+    /// owner segments. Returns `(buffer, segments)` where `segments[r]` is
+    /// the range of rank r's tensors inside the buffer, matching the input
+    /// layout of [`super::distributed::ring_allgather_sharded`].
+    pub fn read_parameters_flat_in_owner_order(
+        &self,
+        world_size: usize,
+    ) -> Result<(Vec<f32>, Vec<std::ops::Range<usize>>)> {
+        let layout = self.full_model_optimizer.gradient_layout();
+        let registry = full_model_named_trainables(
+            &self.h_recurrent,
+            &self.l_recurrent,
+            &self.projections,
+            self.token_frontend.as_ref(),
+            &self.output,
+        )?;
+        anyhow::ensure!(
+            registry.len() == layout.len(),
+            "full-model registry and optimizer gradient layout disagree: {} != {}",
+            registry.len(),
+            layout.len()
+        );
+        let owners = Self::sharded_owner_segments(world_size, layout.len());
+        let total: usize = layout.iter().map(|(_, len)| *len).sum();
+        let mut flat = Vec::with_capacity(total);
+        let mut segments = Vec::with_capacity(world_size);
+        for owner in &owners {
+            let start = flat.len();
+            for &tensor_index in owner {
+                let tensor_len = layout[tensor_index].1;
+                let parameter = &registry[tensor_index].parameter;
+                let mut offset = 0usize;
+                while offset < tensor_len {
+                    let len = self
+                        .optimizer_transport_chunk_values
+                        .min(tensor_len - offset)
+                        .max(1);
+                    let readback = GpuBuffer::uninitialized_host_f32(&self.device, len)?;
+                    let mut commands = vulkan::ComputeBatch::new(&self.device)?;
+                    commands.readback_f32_range(parameter, offset, &readback, 0, len)?;
+                    commands.submit()?;
+                    let vals = readback.read_f32(len)?;
+                    flat.extend_from_slice(&vals);
+                    offset += len;
+                }
+            }
+            segments.push(start..flat.len());
+        }
+        Ok((flat, segments))
+    }
+
+    /// Debug: compare the owner-ordered `flat` parameter values against the
+    /// graph's parameter snapshots (what the weight checksum reads). Returns
+    /// the names+indices of tensors whose flat values differ from the snapshot
+    /// values. If empty, the flat buffer and the snapshot agree, meaning any
+    /// divergence is in the write or in the checksum read itself.
+
+
+    /// Write an allgathered owner-ordered flat parameter buffer back into the
+    /// model. Inverse of [`Self::read_parameters_flat_in_owner_order`]:
+    /// `segments[r]` names rank r's tensor range inside `flat`, and tensor i
+    /// (owner i % world_size) is written from the concatenation of its
+    /// owner's segment in layout order.
+    pub fn write_parameters_flat_from_owner_order(
+        &self,
+        flat: &[f32],
+        segments: &[std::ops::Range<usize>],
+        world_size: usize,
+    ) -> Result<()> {
+        let layout = self.full_model_optimizer.gradient_layout();
+        let registry = full_model_named_trainables(
+            &self.h_recurrent,
+            &self.l_recurrent,
+            &self.projections,
+            self.token_frontend.as_ref(),
+            &self.output,
+        )?;
+        anyhow::ensure!(
+            segments.len() == world_size,
+            "owner-ordered segment count {} != world size {world_size}",
+            segments.len()
+        );
+        // Flatten each owner's tensors back into owner order for slicing.
+        let owners = Self::sharded_owner_segments(world_size, layout.len());
+        for (owner_rank, owner) in owners.iter().enumerate() {
+            let seg = segments[owner_rank].clone();
+            let mut cursor = 0usize;
+            for &tensor_index in owner {
+                let tensor_len = layout[tensor_index].1;
+                let parameter = &registry[tensor_index].parameter;
+                let slice = &flat[seg.start + cursor..seg.start + cursor + tensor_len];
+                let mut offset = 0usize;
+                while offset < tensor_len {
+                    let len = self
+                        .optimizer_transport_chunk_values
+                        .min(tensor_len - offset)
+                        .max(1);
+                    let write_buf = GpuBuffer::uninitialized_host_f32(&self.device, len)?;
+                    write_buf.write_f32(&slice[offset..offset + len])?;
+                    let mut commands = vulkan::ComputeBatch::new(&self.device)?;
+                    commands.copy_f32_range(&write_buf, 0, parameter, offset, len)?;
+                    commands.submit()?;
+                    offset += len;
+                }
+                cursor += tensor_len;
+            }
+        }
+        Ok(())
+    }
+
     /// SHA-256 over all parameter values (name + length + bits). Used to verify
     /// that two ranks' optimizers stayed bit-identical after a distributed step.
     pub fn full_model_weight_checksum(&self) -> Result<String> {
@@ -21165,6 +21407,7 @@ impl HierarchosTrainingGraph {
     /// from device memory. A frontend-enabled graph returns the historical
     /// recurrent/projection/output registry plus all learned coherent-v9
     /// token/memory tensors; the tied `lm_head.weight` appears exactly once.
+    /// Debug: read tensor `indices` master values directly (GPU readback).
     pub fn full_model_parameter_snapshots(&self) -> Result<Vec<RwkvParameterSnapshot>> {
         let registry = full_model_named_trainables(
             &self.h_recurrent,

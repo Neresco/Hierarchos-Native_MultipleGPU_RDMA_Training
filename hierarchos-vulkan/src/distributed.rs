@@ -119,7 +119,7 @@ impl RdmaLink {
 
     /// TCP connect with retries: peers may still be doing one-time Vulkan
     /// setup (~10 min) before they reach the RDMA control bind.
-    fn connect_retry(addr: SocketAddr, attempts: u32) -> anyhow::Result<TcpStream> {
+    pub(crate) fn connect_retry(addr: SocketAddr, attempts: u32) -> anyhow::Result<TcpStream> {
         let mut last_err: Option<std::io::Error> = None;
         for i in 0..attempts {
             match TcpStream::connect(addr) {
@@ -147,6 +147,15 @@ impl RdmaLink {
     /// Listener variant using an already-bound control listener. Lets the
     /// caller complete other setup (e.g. signal a peer) before accepting.
     pub fn connect_with_bound_listener(
+        device_name: &str,
+        listener: TcpListener,
+    ) -> anyhow::Result<(Self, TcpStream)> {
+        Self::accept_from_listener(device_name, listener)
+    }
+
+    /// Accept a control connection on an already-bound listener and complete
+    /// the QP handshake (listener side writes its endpoint first).
+    pub fn accept_from_listener(
         device_name: &str,
         listener: TcpListener,
     ) -> anyhow::Result<(Self, TcpStream)> {
@@ -243,7 +252,7 @@ impl RdmaLink {
             attr.send_cq = send_cq;
             attr.recv_cq = recv_cq;
             attr.srq = std::ptr::null_mut();
-            attr.cap.max_send_wr = 64;
+            attr.cap.max_send_wr = 4096;
             attr.cap.max_recv_wr = 4096;
             attr.cap.max_send_sge = 1;
             attr.cap.max_recv_sge = 1;
@@ -678,6 +687,11 @@ pub struct NetworkSendChannel {
 }
 
 impl NetworkSendChannel {
+    /// Wire chunk width in f32 values.
+    pub fn chunk_len(&self) -> usize {
+        self.chunk_len
+    }
+
     pub fn connect(
         device_name: &str,
         control_addr: std::net::SocketAddr,
@@ -804,3 +818,447 @@ impl Drop for RegisteredBuffer {
 }
 
 
+
+/// Send one contiguous f32 block over a channel, split into wire chunks.
+pub fn send_block(channel: &mut NetworkSendChannel, data: &[f32]) -> anyhow::Result<()> {
+    for chunk in data.chunks(channel.chunk_len()) {
+        channel.send_chunk(chunk)?;
+    }
+    Ok(())
+}
+
+/// Receive one contiguous f32 block (len f32s) over a channel.
+pub fn recv_block(channel: &mut NetworkGradientSource, len: usize) -> anyhow::Result<Vec<f32>> {
+    let mut out = vec![0f32; len];
+    let mut cursor = 0usize;
+    while cursor < len {
+        let got = channel.receive_into(&mut out[cursor..])?;
+        cursor += got;
+    }
+    Ok(out)
+}
+
+fn rdz_debug() -> bool {
+    std::env::var_os("RING_DEBUG").is_some()
+}
+
+/// Send `send_data` to the successor and receive `recv_len` f32s from the
+/// predecessor, INTERLEAVED chunk-by-chunk. This keeps both directions draining
+/// each other's send rings as they fill, which avoids IBV_WC_RNR_RETRY_EXC_ERR
+/// (receiver-not-ready) that occurs when one rank bulk-sends an entire block
+/// while its peer is also bulk-sending and not yet receiving.
+pub fn exchange_blocks(
+    send: &mut NetworkSendChannel,
+    recv: &mut NetworkGradientSource,
+    send_data: &[f32],
+    recv_len: usize,
+) -> anyhow::Result<Vec<f32>> {
+    let chunk = send.chunk_len();
+    let mut recv_out = vec![0f32; recv_len];
+    let mut sc = 0usize;
+    let mut rc = 0usize;
+    if rdz_debug() {
+        eprintln!("[dbg] exchange_blocks enter send={} recv={}", send_data.len(), recv_len);
+    }
+    let mut iter = 0usize;
+    while sc < send_data.len() || rc < recv_len {
+        if sc < send_data.len() {
+            let n = chunk.min(send_data.len() - sc);
+            if rdz_debug() && iter < 4 {
+                eprintln!("[dbg] exchange SEND iter {} (sc={})", iter, sc / chunk);
+            }
+            send.send_chunk(&send_data[sc..sc + n])?;
+            sc += n;
+        }
+        if rc < recv_len {
+            let n = chunk.min(recv_len - rc);
+            if rdz_debug() && iter < 4 {
+                eprintln!("[dbg] exchange RECV iter {} (rc={})", iter, rc / chunk);
+            }
+            let got = recv.receive_into(&mut recv_out[rc..rc + n])?;
+            rc += got;
+        }
+        iter += 1;
+    }
+    if rdz_debug() {
+        eprintln!("[dbg] exchange_blocks EXIT after {} iters", iter);
+    }
+    Ok(recv_out)
+}
+
+/// One rank's position in a ring of `world_size` ranks.
+///
+/// The ring gives every rank one send channel to its successor
+/// ((rank+1) % world_size) and one receive channel from its predecessor
+/// ((rank+world_size-1) % world_size). Port scheme: rank r listens on
+/// `port_base + r`; the predecessor connects there. Bootstrap is deadlock-free
+/// because every rank binds its listener before connecting to its successor.
+pub struct RingTransport {
+    pub send_to_successor: NetworkSendChannel,
+    pub recv_from_predecessor: NetworkGradientSource,
+    pub send_ctl: TcpStream,
+    /// Persistent BufReader over the predecessor control stream. A fresh
+    /// BufReader per read_line would drop buffered lines that a fast peer
+    /// already sent, silently desynchronizing the ring allgather.
+    recv_ctl: std::io::BufReader<TcpStream>,
+    #[allow(dead_code)]
+    rank: usize,
+    #[allow(dead_code)]
+    world_size: usize,
+}
+
+impl RingTransport {
+    pub fn connect(
+        device_name: &str,
+        rank: usize,
+        world_size: usize,
+        port_base: u16,
+        peer_ips: &[String],
+        chunk_len: usize,
+        ring_count: usize,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(world_size >= 2, "ring requires at least 2 ranks");
+        anyhow::ensure!(rank < world_size, "rank out of range");
+        let succ = (rank + 1) % world_size;
+        let pred = (rank + world_size - 1) % world_size;
+
+        // Phase 1: bind our listener for the predecessor.
+        let listen_addr: SocketAddr = format!("0.0.0.0:{}", port_base + rank as u16).parse()?;
+        let listener = TcpListener::bind(listen_addr)?;
+        eprintln!(
+            "  [ring] rank {rank}/{world_size} listening on :{} (pred {pred})",
+            port_base + rank as u16
+        );
+
+        // Phase 2: accept from the predecessor in a separate thread. It blocks
+        // until the predecessor connects; running it off the main thread is what
+        // breaks the circular handshake wait (this rank's main thread can
+        // connect to its successor while the accept thread waits for the
+        // predecessor, concurrently).
+        let device_name_accept = device_name.to_owned();
+        let accept_handle = std::thread::spawn(move || -> anyhow::Result<(RdmaLink, TcpStream)> {
+            RdmaLink::accept_from_listener(&device_name_accept, listener)
+        });
+
+        // Phase 3: connect to the successor on the main thread (with retry).
+        // If the successor never appears, connect_retry fails and this function
+        // returns Err, exiting the process and killing the accept thread too.
+        let conn_addr: SocketAddr = format!("{}:{}", peer_ips[succ], port_base + succ as u16).parse()?;
+        let conn_sock = RdmaLink::connect_retry(conn_addr, 90)?;
+        let (send_link, send_ctl) = RdmaLink::connect_from_socket(device_name, conn_sock, false)?;
+        let send_channel = NetworkSendChannel::finish(send_link, chunk_len, ring_count)?;
+
+        // Phase 4: join the accept thread now that the send side is up.
+        let (recv_link, recv_ctl) = accept_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("ring accept thread panicked"))??;
+        let recv_channel = NetworkGradientSource::finish(recv_link, chunk_len, ring_count)?;
+
+        eprintln!(
+            "  [ring] rank {rank} connected: send->rank{succ}, recv<-rank{pred}"
+        );
+        Ok(Self {
+            send_to_successor: send_channel,
+            recv_from_predecessor: recv_channel,
+            send_ctl,
+            recv_ctl: std::io::BufReader::new(recv_ctl),
+            rank,
+            world_size,
+        })
+    }
+
+    /// Send a small newline-terminated JSON message to the successor.
+    pub fn send_json(&mut self, line: &str) -> anyhow::Result<()> {
+        let mut msg = line.to_string();
+        msg.push('\n');
+        self.send_ctl.write_all(msg.as_bytes())?;
+        self.send_ctl.flush()?;
+        Ok(())
+    }
+
+    /// Receive a small JSON line from the predecessor.
+    pub fn recv_json(&mut self) -> anyhow::Result<String> {
+        let mut line = String::new();
+        use std::io::BufRead;
+        self.recv_ctl.read_line(&mut line)?;
+        return Ok(line.trim().to_string());
+    }
+}
+
+/// Ring allreduce (reduce-scatter + allgather) over a flat f32 buffer.
+/// On return every rank holds the element-wise sum of all ranks' inputs.
+/// Deterministic: block rotation order depends only on (rank, world_size).
+/// `data` is mutated in place (local input -> global sum).
+pub fn ring_allreduce_sum(
+    transport: &mut RingTransport,
+    rank: usize,
+    world_size: usize,
+    data: &mut Vec<f32>,
+) -> anyhow::Result<()> {
+    let n = world_size;
+    anyhow::ensure!(n >= 2, "ring allreduce needs >= 2 ranks");
+    let total = data.len();
+    let bs = (total + n - 1) / n; // ceil block size; last block may be smaller
+    let range_of = |b: usize| (b * bs)..(b * bs + bs).min(total);
+    let modn = |x: isize| (((x % n as isize) + n as isize) % n as isize) as usize;
+
+    if rdz_debug() {
+        eprintln!("[dbg] rank {} === PHASE: ring_allreduce_sum start (total={} chunks) ===", rank, total / 262144);
+    }
+    // Phase 1: reduce-scatter (n-1 steps). After it, rank R holds the fully
+    // reduced block (R+1) mod n. Each step sends the send-block and receives the
+    // recv-block interleaved so the two directions drain each other's rings.
+    for s in 0..n - 1 {
+        let send_b = modn(rank as isize - s as isize);
+        let recv_b = modn(rank as isize - s as isize - 1);
+        let sr = range_of(send_b);
+        let rr = range_of(recv_b);
+        if rdz_debug() {
+            eprintln!("[dbg] rank {} reduce-scatter step {} send_block {} recv_block {}", rank, s, send_b, recv_b);
+        }
+        let received = exchange_blocks(
+            &mut transport.send_to_successor,
+            &mut transport.recv_from_predecessor,
+            &data[sr],
+            rr.len(),
+        )?;
+        for (a, b) in data[rr].iter_mut().zip(received.iter()) {
+            *a = *a + b;
+        }
+    }
+
+    // Phase 2: allgather (n-1 steps). After it, every rank holds all n reduced
+    // blocks.
+    for t in 0..n - 1 {
+        let send_b = modn((rank + 1) as isize - t as isize);
+        let recv_b = modn(rank as isize - t as isize);
+        let sr = range_of(send_b);
+        let rr = range_of(recv_b);
+        let received = exchange_blocks(
+            &mut transport.send_to_successor,
+            &mut transport.recv_from_predecessor,
+            &data[sr],
+            rr.len(),
+        )?;
+        data[rr].copy_from_slice(&received);
+    }
+    Ok(())
+}
+
+/// Segment owner whose payload rank `rank` receives at ring step `step`.
+///
+/// At step s every rank forwards segment owner `(r - s) mod n`; rank r's
+/// predecessor is `(r - 1) mod n`, which at step s forwards owner
+/// `((r - 1) - s) mod n = (r - s - 1) mod n`. So rank r receives owner
+/// `(r - s - 1) mod n`.
+fn ring_recv_owner(rank: usize, n: usize, step: usize) -> usize {
+    let r = (rank as isize - step as isize - 1) % n as isize;
+    ((r + n as isize) % n as isize) as usize
+}
+
+/// Segment owner rank `rank` forwards to its successor at ring step `step`
+/// (`(rank - step) mod n`).
+fn ring_send_owner(rank: usize, n: usize, step: usize) -> usize {
+    let r = (rank as isize - step as isize) % n as isize;
+    ((r + n as isize) % n as isize) as usize
+}
+
+/// One pure step of the unequal-segment ring allgather rotation.
+///
+/// `data` is the rank's working buffer; `received` is the segment payload just
+/// read from the predecessor. This validates `received` against the expected
+/// segment and copies it into `data[seg[recv_owner]]`. The rotation is
+/// deterministic: at step s of an n-rank ring, rank r holds segment owner
+/// `modn(r - s)`, receives owner `modn(r - s - 1)`, and forwards owner
+/// `modn(r - s + 1)`. After n-1 steps every rank owns the full buffer.
+fn ring_allgather_sharded_step(
+    data: &mut Vec<f32>,
+    seg: &[std::ops::Range<usize>],
+    rank: usize,
+    n: usize,
+    step: usize,
+    received: &[f32],
+) {
+    let recv_owner = ring_recv_owner(rank, n, step);
+    let recv_range = &seg[recv_owner];
+    debug_assert_eq!(
+        received.len(),
+        recv_range.len(),
+        "sharded allgather step {step}: received {} f32s for owner {recv_owner}, expected {}",
+        received.len(),
+        recv_range.len()
+    );
+    data[recv_range.clone()].copy_from_slice(received);
+}
+
+/// Ring allgather of an f32 buffer split into UNEQUAL per-rank segments.
+///
+/// `seg[r]` is the byte-range of the full buffer owned by rank r. On entry,
+/// rank r has filled `data[seg[r]]` with its own values. After the call,
+/// every rank's `data` holds the full buffer with `data[seg[r]]` taken from
+/// rank r. Values are copied (never reduced). The n-1 ring steps interleave
+/// sends and receives chunk-by-chunk via [`exchange_blocks`], draining each
+/// peer's send ring to avoid RNR retries.
+///
+/// Requires: n >= 2, `seg.len() == n`, segments covering `data` contiguously
+/// in owner order (seg[0].start == 0, seg[k].end == seg[k+1].start,
+/// seg[n-1].end == data.len()).
+pub fn ring_allgather_sharded(
+    transport: &mut RingTransport,
+    rank: usize,
+    world_size: usize,
+    seg: &[std::ops::Range<usize>],
+    data: &mut Vec<f32>,
+) -> anyhow::Result<()> {
+    let n = world_size;
+    anyhow::ensure!(n >= 2, "ring allgather needs >= 2 ranks");
+    anyhow::ensure!(rank < n, "rank out of range");
+    anyhow::ensure!(seg.len() == n, "segment count {} != world size {n}", seg.len());
+    let mut cursor = 0usize;
+    for r in 0..n {
+        anyhow::ensure!(
+            seg[r].start == cursor,
+            "sharded allgather segment {r} starts at {}, expected {}",
+            seg[r].start,
+            cursor
+        );
+        anyhow::ensure!(
+            seg[r].end <= data.len(),
+            "sharded allgather segment {r} exceeds buffer length {}",
+            data.len()
+        );
+        cursor = seg[r].end;
+    }
+    anyhow::ensure!(
+        cursor == data.len(),
+        "sharded allgather segments cover {} of {} f32s",
+        cursor,
+        data.len()
+    );
+
+    for s in 0..n - 1 {
+        let send_owner = ring_send_owner(rank, n, s);
+        let recv_len = seg[ring_recv_owner(rank, n, s)].len();
+        let received = exchange_blocks(
+            &mut transport.send_to_successor,
+            &mut transport.recv_from_predecessor,
+            &data[seg[send_owner].clone()],
+            recv_len,
+        )?;
+        ring_allgather_sharded_step(data, seg, rank, n, s, &received);
+    }
+    Ok(())
+}
+
+/// Allgather a list of small (rank, json) items around the ring over TCP.
+/// Every rank starts with its own item; after n-1 steps each rank holds all n,
+/// sorted by rank for canonical merge order.
+pub fn ring_allgather_items(
+    transport: &mut RingTransport,
+    rank: usize,
+    world_size: usize,
+    own_json: &str,
+) -> anyhow::Result<Vec<(usize, String)>> {
+    let n = world_size;
+    let mut held: Vec<(usize, String)> = vec![(rank, own_json.to_string())];
+    for (t, _t) in (0..n - 1).enumerate() {
+        if rdz_debug() {
+            eprintln!("[dbg] rank {} meta-gather step {t}", rank);
+        }
+        let payload = serde_json::to_string(&held)?;
+        transport.send_json(&payload)?;
+        let recv_str = transport.recv_json()?;
+        let incoming: Vec<(usize, String)> = serde_json::from_str(&recv_str)?;
+        for (r, m) in incoming {
+            if !held.iter().any(|(hr, _)| *hr == r) {
+                held.push((r, m));
+            }
+        }
+        if rdz_debug() {
+            eprintln!("[dbg] rank {} meta-gather step {} DONE (held={})", rank, t, held.len());
+        }
+    }
+    if rdz_debug() {
+        eprintln!("[dbg] rank {} === PHASE: meta-gather complete ===", rank);
+    }
+    held.sort_by_key(|(r, _)| *r);
+    Ok(held)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Simulate the full ring with in-memory channels: rank r receives from
+    /// rank (r-1) % n and sends to rank (r+1) % n. Drives the exact rotation
+    /// helpers used by [`ring_allgather_sharded`] (ring_recv_owner /
+    /// ring_send_owner / ring_allgather_sharded_step) and asserts every rank
+    /// ends with the same full buffer.
+    #[test]
+    fn sharded_allgather_rotation_distributes_full_buffer() {
+        for &n in &[2usize, 3, 4, 7] {
+            // Unequal segments: owner r's segment length = 4 * (r + 1).
+            let lens: Vec<usize> = (0..n).map(|r| 4 * (r + 1)).collect();
+            let total: usize = lens.iter().sum();
+            let mut seg: Vec<std::ops::Range<usize>> = Vec::with_capacity(n);
+            let mut cursor = 0usize;
+            for len in &lens {
+                seg.push(cursor..cursor + *len);
+                cursor += *len;
+            }
+            // Expected full buffer: element i gets value (i + 1) so any
+            // transposition is detectable.
+            let expected: Vec<f32> = (1..=total).map(|i| i as f32).collect();
+
+            // Initial buffers: only each rank's own segment is filled.
+            let mut buffers: Vec<Vec<f32>> = (0..n)
+                .map(|r| {
+                    let mut buf = vec![f32::NAN; total];
+                    buf[seg[r].clone()].copy_from_slice(&expected[seg[r].clone()]);
+                    buf
+                })
+                .collect();
+
+            for s in 0..n - 1 {
+                let mut received_from_pred: Vec<Option<Vec<f32>>> = vec![None; n];
+                for r in 0..n {
+                    let pred = (r + n - 1) % n;
+                    let send_owner = ring_send_owner(pred, n, s);
+                    let payload = buffers[pred][seg[send_owner].clone()].to_vec();
+                    received_from_pred[r] = Some(payload);
+                }
+                for r in 0..n {
+                    let payload = received_from_pred[r]
+                        .take()
+                        .expect("every rank receives each step");
+                    ring_allgather_sharded_step(&mut buffers[r], &seg, r, n, s, &payload);
+                }
+            }
+
+            for r in 0..n {
+                assert_eq!(
+                    buffers[r], expected,
+                    "n={n} rank {r}: sharded allgather rotation produced wrong buffer"
+                );
+            }
+        }
+    }
+
+    /// Segment-owner math must agree between the two helpers at every step:
+    /// what rank r forwards, its successor must expect to receive.
+    #[test]
+    fn sharded_allgather_owner_math_consistent() {
+        for n in 2..=6usize {
+            for rank in 0..n {
+                for s in 0..n - 1 {
+                    let succ = (rank + 1) % n;
+                    assert_eq!(
+                        ring_send_owner(rank, n, s),
+                        ring_recv_owner(succ, n, s),
+                        "n={n} rank={rank} step={s}: sender/recipient owner mismatch"
+                    );
+                }
+            }
+        }
+    }
+}

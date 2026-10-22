@@ -179,6 +179,8 @@ struct Args {
     rank: usize,
     world_size: usize,
     peer_ip: Option<String>,
+    peer_ips: Vec<String>,
+    rendezvous: Option<String>,
     rdma_device: Option<String>,
     distributed_mode: String,
     json_events: bool,
@@ -424,6 +426,8 @@ fn parse_args() -> Result<Args> {
     let mut world_size = 1usize;
     let mut peer_ip = None;
     let mut rdma_device = None;
+    let mut peer_ips: Vec<String> = Vec::new();
+    let mut rendezvous = None;
     let mut distributed_mode = "param-server".to_string();
     let mut json_events = false;
 
@@ -598,6 +602,22 @@ fn parse_args() -> Result<Args> {
                     parse_value(required_value(&mut args, "--rdma-device")?, "--rdma-device")?
                 )
             }
+            "--peer-ips" => {
+                let raw = required_value(&mut args, "--peer-ips")?
+                    .to_string_lossy()
+                    .to_string();
+                peer_ips = raw.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "--rendezvous" => {
+                rendezvous = Some(
+                    required_value(&mut args, "--rendezvous")?
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
             "--distributed-mode" => {
                 distributed_mode =
                     parse_value(required_value(&mut args, "--distributed-mode")?, "--distributed-mode")?
@@ -705,6 +725,8 @@ fn parse_args() -> Result<Args> {
         world_size,
         peer_ip,
         rdma_device,
+        peer_ips,
+        rendezvous,
         distributed_mode,
         json_events,
     };
@@ -758,9 +780,10 @@ fn validate_args(args: &Args) -> Result<()> {
             args.rank < args.world_size,
             "--rank must be smaller than --world-size"
         );
+        // 2-rank uses --peer-ip; N>2 uses --peer-ips (one IP per rank).
         anyhow::ensure!(
-            args.peer_ip.is_some(),
-            "--peer-ip is required when --world-size > 1"
+            args.peer_ip.is_some() || args.peer_ips.len() == args.world_size,
+            "--peer-ip (world-size 2) or --peer-ips (world-size > 2) is required when --world-size > 1"
         );
         anyhow::ensure!(
             args.rdma_device.is_some(),
@@ -775,9 +798,22 @@ fn validate_args(args: &Args) -> Result<()> {
             "--persist-state is not supported with --world-size > 1"
         );
         anyhow::ensure!(
-            args.distributed_mode == "param-server" || args.distributed_mode == "allreduce",
-            "--distributed-mode must be 'param-server' or 'allreduce'"
+            args.distributed_mode == "param-server"
+                || args.distributed_mode == "allreduce"
+                || args.distributed_mode == "zero1",
+            "--distributed-mode must be 'param-server', 'allreduce', or 'zero1'"
         );
+        if args.world_size > 2 {
+            anyhow::ensure!(
+                args.distributed_mode == "allreduce" || args.distributed_mode == "zero1",
+                "world-size > 2 requires --distributed-mode allreduce or zero1 (param-server is 2-rank only)"
+            );
+            anyhow::ensure!(
+                args.peer_ips.len() == args.world_size,
+                "--peer-ips must list exactly one IP per rank ({} expected for world-size {})",
+                args.world_size, args.world_size
+            );
+        }
     }
     if !args.trainable_prefixes.is_empty() {
         anyhow::ensure!(
@@ -5481,12 +5517,35 @@ const DISTRIBUTED_WEIGHT_CONTROL_PORT: u16 = 18516;
 const DISTRIBUTED_WEIGHT_CHUNK_BYTES: usize = 256 * 1024;
 const DISTRIBUTED_GRADIENT_RING: usize = 8;
 const DISTRIBUTED_WEIGHT_RING: usize = 16;
+// The ring-allreduce recv ring must be large enough to hold a WHOLE reduce-
+// scatter block (gradient_size / world_size), otherwise send_block fills the
+// successor's small recv ring and the 9th+ chunk blocks while every rank is
+// also blocked sending -> circular RNR deadlock. 256 chunks (1MB each) covers
+// blocks up to 256MB (gradient up to 512MB at world_size=2, larger for N>2).
+const DISTRIBUTED_RING_ALLREDUCE_COUNT: usize = 256;
 
 /// One rank's pair of single-direction RDMA channels.
 ///
 /// Gradient channel: replica -> primary. Weight channel: primary -> replica.
 /// Each channel keeps its TCP control socket open for per-message metadata
 /// (gradient shard headers, weight-state skeletons, READY handshake).
+const DISTRIBUTED_RING_PORT_BASE: u16 = 18530;
+
+/// Unified distributed topology. Param-server uses two directional channels
+/// (2 ranks); allreduce uses an N-rank ring.
+enum DistributedTopology {
+    ParamServer(DistributedRankChannels),
+    AllReduce {
+        ring: hierarchos_vulkan::distributed::RingTransport,
+    },
+    /// ZeRO-1: full gradient allreduce like AllReduce, but AdamW moments are
+    /// sharded (rank r owns tensor i % world == r) and updated parameters are
+    /// ring-allgathered back after the local step.
+    Zero1 {
+        ring: hierarchos_vulkan::distributed::RingTransport,
+    },
+}
+
 #[allow(dead_code)]
 enum DistributedRankChannels {
     Primary {
@@ -5501,6 +5560,53 @@ enum DistributedRankChannels {
         weight_source: hierarchos_vulkan::distributed::NetworkGradientSource,
         weight_ctl: std::net::TcpStream,
     },
+}
+
+/// Block until every rank has checked in with the rendezvous barrier server.
+/// Called after Vulkan init (the slow, skew-prone phase) and before ring
+/// formation, so all ranks reach the ring connection simultaneously.
+fn rendezvous_wait(addr: &str, rank: usize, world_size: usize) -> Result<()> {
+    use std::io::BufRead;
+    let sock = std::net::TcpStream::connect(addr)
+        .with_context(|| format!("rank {rank}: rendezvous connect to {addr}"))?;
+    eprintln!(
+        "rank {rank}/{world_size}: rendezvous check-in sent to {addr}, waiting for GO"
+    );
+    let mut line = String::new();
+    std::io::BufReader::new(sock).read_line(&mut line)?;
+    anyhow::ensure!(
+        line.trim() == "GO",
+        "rank {rank}: rendezvous expected GO, got {line:?}"
+    );
+    eprintln!("rank {rank}/{world_size}: rendezvous GO received, forming ring");
+    Ok(())
+}
+
+/// Build the per-rank IP table used for ring bootstrap. peer_ips[r] = IP of
+/// rank r. A rank never connects to itself, so its own slot is a placeholder.
+fn resolve_peer_ips(args: &Args) -> Result<Vec<String>> {
+    // Preferred: --peer-ips (one IP per rank) works for N=2 and N>2. The rank-0
+    // dashboard launcher always uses this.
+    if args.peer_ips.len() == args.world_size {
+        return Ok(args.peer_ips.clone());
+    }
+    // Legacy N=2: --peer-ip (the single peer's address).
+    if args.world_size == 2 {
+        let peer = args
+            .peer_ip
+            .as_deref()
+            .context("--peer-ip (world-size 2) or --peer-ips (world-size N) is required")?;
+        let mut ips = vec![String::new(); 2];
+        ips[args.rank] = "0.0.0.0".to_string();
+        ips[1 - args.rank] = peer.to_string();
+        return Ok(ips);
+    }
+    anyhow::ensure!(
+        args.peer_ips.len() == args.world_size,
+        "--peer-ips must list {} IPs (one per rank)",
+        args.world_size
+    );
+    Ok(args.peer_ips.clone())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5522,10 +5628,9 @@ fn run_distributed_epochs(
     let rank = args.rank;
     let world_size = args.world_size;
     let is_primary = rank == 0;
-    let peer = args
-        .peer_ip
-        .as_deref()
-        .context("--peer-ip is required for distributed training")?;
+    // --peer-ip is required only for the 2-rank param-server path (and 2-rank
+    // allreduce). N>2 allreduce uses --peer-ips instead, so this can be None.
+    let peer = args.peer_ip.as_deref();
     let rdma_device = args
         .rdma_device
         .as_deref()
@@ -5533,21 +5638,52 @@ fn run_distributed_epochs(
     let grad_chunk_values = args.gradient_stream_chunk_values;
     // In allreduce mode BOTH channels carry gradient chunks, so the weight
     // channel must be sized to the gradient chunk width, not the weight width.
-    let weight_chunk_values = if args.distributed_mode == "allreduce" {
+    let weight_chunk_values = if args.distributed_mode == "allreduce" || args.distributed_mode == "zero1" {
         grad_chunk_values
     } else {
         DISTRIBUTED_WEIGHT_CHUNK_BYTES / 4
     };
 
     eprintln!(
-        "distributed_training rank={rank} world_size={world_size} role={} peer={peer} rdma_device={rdma_device} grad_chunk_values={grad_chunk_values}",
+        "distributed_training rank={rank} world_size={world_size} role={} peer={peer:?} rdma_device={rdma_device} grad_chunk_values={grad_chunk_values}",
         if is_primary { "primary" } else { "replica" }
     );
 
-    // Deadlock-free channel setup. The replica signals READY over the gradient
-    // control socket only after binding its weight listener, so the primary
-    // cannot connect to the weight port before it exists.
-    let mut channels = if is_primary {
+    // Topology setup. Allreduce uses an N-rank ring (deadlock-free: every rank
+    // binds its listener before connecting to its successor). Param-server uses
+    // two directional channels where the replica signals READY before the
+    // primary connects to the weight port.
+    let mut topology: DistributedTopology = if args.distributed_mode == "allreduce" || args.distributed_mode == "zero1" {
+        if let Some(rdz) = &args.rendezvous {
+            rendezvous_wait(rdz, rank, world_size)?;
+        }
+        let peer_ips = resolve_peer_ips(args)?;
+        let ring = hierarchos_vulkan::distributed::RingTransport::connect(
+            rdma_device,
+            rank,
+            world_size,
+            DISTRIBUTED_RING_PORT_BASE,
+            &peer_ips,
+            grad_chunk_values,
+            DISTRIBUTED_RING_ALLREDUCE_COUNT,
+        )?;
+        if args.distributed_mode == "zero1" {
+            // ZeRO-1: shrink AdamW moments to the owned tensor shard before any
+            // accumulation window opens. Parameters and accumulated gradients
+            // stay full-sized; only exp_avg/exp_avg_sq are sharded.
+            graph
+                .shard_full_model_optimizer(rank, world_size)
+                .context("ZeRO-1 optimizer sharding")?;
+            eprintln!(
+                "distributed_training zero1 optimizer sharded rank={rank} world_size={world_size}"
+            );
+            DistributedTopology::Zero1 { ring }
+        } else {
+            DistributedTopology::AllReduce { ring }
+        }
+    } else {
+        let peer = peer.context("--peer-ip is required for param-server distributed training")?;
+        let channels = if is_primary {
         let grad_addr: std::net::SocketAddr =
             format!("0.0.0.0:{DISTRIBUTED_GRADIENT_CONTROL_PORT}").parse()?;
         let (grad_source, mut grad_ctl) =
@@ -5590,6 +5726,8 @@ fn run_distributed_epochs(
             weight_source,
             weight_ctl,
         }
+        };
+        DistributedTopology::ParamServer(channels)
     };
 
     // Initial state sync: both ranks built their graphs from the same model
@@ -5598,8 +5736,9 @@ fn run_distributed_epochs(
     // mode each rank steps its own optimizer, so the graphs must start
     // identical (guaranteed by the deterministic model-package init) and no
     // broadcast is needed.
-    if args.distributed_mode != "allreduce" {
-    match &mut channels {
+    if args.distributed_mode != "allreduce" && args.distributed_mode != "zero1" {
+        if let DistributedTopology::ParamServer(channels) = &mut topology {
+    match channels {
         DistributedRankChannels::Primary {
             weight_sink,
             weight_ctl,
@@ -5625,8 +5764,9 @@ fn run_distributed_epochs(
             eprintln!("distributed_training initial_weight_sync applied");
         }
     }
+        }
     }
-    let mut optimizer_step = graph.full_model_optimizer_state()?.step;
+    let mut optimizer_step = graph.full_model_optimizer_step()?;
 
     emit_gui_event(
         args.json_events,
@@ -5725,99 +5865,179 @@ fn run_distributed_epochs(
                 )?;
             let compute_seconds = started.elapsed().as_secs_f64();
 
-            if args.distributed_mode == "allreduce" {
-                // Phase R2: pairwise gradient allreduce + local optimizer step.
-                // Channel roles: rank 0 sends on the weight channel and
-                // receives on the gradient channel; rank 1 the inverse.
-                // Metadata ordering avoids deadlock: rank 1 sends then reads;
-                // rank 0 reads then sends.
-                let (send_sink, recv_source, send_ctl, recv_ctl, send_first) =
-                    match &mut channels {
-                        DistributedRankChannels::Primary {
-                            grad_source,
-                            grad_ctl,
-                            weight_sink,
-                            weight_ctl,
-                        } => (weight_sink, grad_source, weight_ctl, grad_ctl, false),
-                        DistributedRankChannels::Replica {
-                            grad_sink,
-                            grad_ctl,
-                            weight_source,
-                            weight_ctl,
-                        } => (grad_sink, weight_source, grad_ctl, weight_ctl, true),
-                    };
-                let source = graph.full_model_pending_gradient_transport_source()?;
-                let my_metadata = source.metadata.clone();
-                let peer_metadata: PendingGradientShardMetadata = if send_first {
-                    let mut line = serde_json::to_string(&my_metadata)?;
-                    line.push('\n');
-                    send_ctl.write_all(line.as_bytes())?;
-                    send_ctl.flush()?;
-                    let mut line = String::new();
-                    BufReader::new(&mut *recv_ctl).read_line(&mut line)?;
-                    serde_json::from_str(line.trim()).context("peer gradient metadata")?
-                } else {
-                    let mut line = String::new();
-                    BufReader::new(&mut *recv_ctl).read_line(&mut line)?;
-                    let peer = serde_json::from_str(line.trim())
-                        .context("peer gradient metadata")?;
-                    let mut mine = serde_json::to_string(&my_metadata)?;
-                    mine.push('\n');
-                    send_ctl.write_all(mine.as_bytes())?;
-                    send_ctl.flush()?;
-                    peer
-                };
-                let stream = graph.allreduce_pending_gradients_with_remote(
-                    &source,
-                    &peer_metadata,
-                    send_sink,
-                    recv_source,
-                    args.gradient_stream_chunk_values,
-                )?;
-                let finish =
-                    graph.finish_full_model_accumulation_with_gradient_clipping(
-                        hyper,
-                        args.grad_clip,
+            match &mut topology {
+                DistributedTopology::AllReduce { ring } => {
+                    // Phase R3: N-rank ring gradient allreduce + local optimizer
+                    // step. Each rank detaches its window, allgathers peer merge
+                    // metadata (canonical rank order), reads its flat gradient,
+                    // ring-allreduces (sums) it, writes the sum back, merges the
+                    // peer normalization counters, and steps its own optimizer.
+                    let source = graph.full_model_pending_gradient_transport_source()?;
+                    let my_metadata = source.metadata.clone();
+                    let my_meta_json = serde_json::to_string(&my_metadata)?;
+
+                    // R6 throughput: time the communication+optimizer phase (distinct
+                    // from compute_seconds which covers only the F+B window).
+                    let comm_started = std::time::Instant::now();
+
+                    // 1. Allgather metadata around the ring (tiny, over TCP).
+                    let all_meta = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_meta_json,
                     )?;
-                anyhow::ensure!(
-                    finish.stepped,
-                    "allreduce optimizer window rejected non-finite gradients after normalization; global_norm={}",
-                    finish.total_norm
-                );
-                optimizer_step = finish.full_model_optimizer.step;
-                // Bit-exact weight verification across ranks.
-                let my_sum = graph.full_model_weight_checksum()?;
-                let peer_sum = if send_first {
-                    let mut msg = my_sum.clone();
-                    msg.push('\n');
-                    send_ctl.write_all(msg.as_bytes())?;
-                    send_ctl.flush()?;
-                    let mut line = String::new();
-                    BufReader::new(&mut *recv_ctl).read_line(&mut line)?;
-                    line.trim().to_string()
-                } else {
-                    let mut line = String::new();
-                    BufReader::new(&mut *recv_ctl).read_line(&mut line)?;
-                    let peer = line.trim().to_string();
-                    let mut msg = my_sum.clone();
-                    msg.push('\n');
-                    send_ctl.write_all(msg.as_bytes())?;
-                    send_ctl.flush()?;
-                    peer
-                };
-                let in_sync = my_sum == peer_sum;
-                eprintln!(
-                    "allreduce_window rank={rank} chunks={} values={} optimizer_step={optimizer_step} weights_in_sync={} compute_seconds={compute_seconds:.2}",
-                    stream.chunk_count, stream.value_count, in_sync
-                );
-                if !in_sync {
-                    eprintln!(
-                        "WARNING allreduce weight divergence at optimizer_step={optimizer_step}: local={} peer={}",
-                        my_sum, peer_sum
+                    // total tokens this window = sum of every rank's shard (world-normalized)
+                    let total_tokens: u64 = all_meta
+                        .iter()
+                        .map(|(_, j)| {
+                            serde_json::from_str::<PendingGradientShardMetadata>(j)
+                                .map(|m| m.consumed_token_count as u64)
+                                .unwrap_or(0)
+                        })
+                        .sum();
+
+                    // 2. Merge every peer's normalization counters into this open
+                    //    window in canonical rank order (skip self).
+                    for (peer_rank, peer_json) in &all_meta {
+                        if *peer_rank == rank {
+                            continue;
+                        }
+                        let peer_metadata: PendingGradientShardMetadata =
+                            serde_json::from_str(peer_json)
+                                .with_context(|| format!("peer {} gradient metadata", peer_rank))?;
+                        let plan = graph.plan_pending_gradient_merge(&peer_metadata)?;
+                        graph.commit_pending_gradient_merge(plan);
+                    }
+
+                    // 3. Read local flat gradient, ring-allreduce (sum), write back.
+                    let mut flat = graph.read_full_model_pending_gradients_flat(&source)?;
+                    hierarchos_vulkan::distributed::ring_allreduce_sum(
+                        ring, rank, world_size, &mut flat,
+                    )?;
+                    graph.write_full_model_pending_gradients_flat(&source, &flat)?;
+
+                    // 4. Local optimizer step on the summed, world-normalized gradient.
+                    let finish = graph.finish_full_model_accumulation_with_gradient_clipping(
+                        hyper, args.grad_clip,
+                    )?;
+                    anyhow::ensure!(
+                        finish.stepped,
+                        "allreduce optimizer window rejected non-finite gradients; global_norm={}",
+                        finish.total_norm
                     );
+                    optimizer_step = finish.full_model_optimizer.step;
+
+                    // 5. Bit-exact weight verification around the ring.
+                    let my_sum = graph.full_model_weight_checksum()?;
+                    let all_sum = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_sum,
+                    )?;
+                    let in_sync = all_sum.iter().all(|(_, cs)| cs == &my_sum);
+                    let comm_seconds = comm_started.elapsed().as_secs_f64();
+                    let total_seconds = compute_seconds + comm_seconds;
+                    let tokens_per_second = if total_seconds > 0.0 && total_tokens > 0 {
+                        total_tokens as f64 / total_seconds
+                    } else {
+                        0.0
+                    };
+                    eprintln!(
+                        "allreduce_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
+                        in_sync, tokens_per_second
+                    );
+                    if !in_sync {
+                        eprintln!(
+                            "WARNING allreduce weight divergence at optimizer_step={optimizer_step}"
+                        );
+                    }
                 }
-            } else {
-            match &mut channels {
+                DistributedTopology::Zero1 { ring } => {
+                    // ZeRO-1 window: identical to the allreduce path through the
+                    // local (sharded) optimizer step, then ring-allgather the
+                    // updated parameters owned by each rank so every replica
+                    // holds the full model.
+                    let source = graph.full_model_pending_gradient_transport_source()?;
+                    let my_metadata = source.metadata.clone();
+                    let my_meta_json = serde_json::to_string(&my_metadata)?;
+
+                    let comm_started = std::time::Instant::now();
+
+                    // 1. Allgather metadata around the ring (tiny, over TCP).
+                    let all_meta = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_meta_json,
+                    )?;
+                    let total_tokens: u64 = all_meta
+                        .iter()
+                        .map(|(_, j)| {
+                            serde_json::from_str::<PendingGradientShardMetadata>(j)
+                                .map(|m| m.consumed_token_count as u64)
+                                .unwrap_or(0)
+                        })
+                        .sum();
+
+                    // 2. Merge every peer's normalization counters (skip self).
+                    for (peer_rank, peer_json) in &all_meta {
+                        if *peer_rank == rank {
+                            continue;
+                        }
+                        let peer_metadata: PendingGradientShardMetadata =
+                            serde_json::from_str(peer_json)
+                                .with_context(|| format!("peer {} gradient metadata", peer_rank))?;
+                        let plan = graph.plan_pending_gradient_merge(&peer_metadata)?;
+                        graph.commit_pending_gradient_merge(plan);
+                    }
+
+                    // 3. Full gradient allreduce (accumulated_grad is full-sized on
+                    //    every rank, so the ring sum is unchanged).
+                    let mut flat = graph.read_full_model_pending_gradients_flat(&source)?;
+                    hierarchos_vulkan::distributed::ring_allreduce_sum(
+                        ring, rank, world_size, &mut flat,
+                    )?;
+                    graph.write_full_model_pending_gradients_flat(&source, &flat)?;
+
+                    // 4. Local step: only this rank's owned slots update moments.
+                    let finish = graph.finish_full_model_accumulation_with_gradient_clipping(
+                        hyper, args.grad_clip,
+                    )?;
+                    anyhow::ensure!(
+                        finish.stepped,
+                        "zero1 optimizer window rejected non-finite gradients; global_norm={}",
+                        finish.total_norm
+                    );
+                    optimizer_step = finish.full_model_optimizer.step;
+
+                    // 5. Gather the post-step parameters: read this rank's owned
+                    //    tensors in owner order, ring-allgather the unequal
+                    //    segments, write the full model back.
+                    let (mut params, segments) =
+                        graph.read_parameters_flat_in_owner_order(world_size)?;
+                    hierarchos_vulkan::distributed::ring_allgather_sharded(
+                        ring, rank, world_size, &segments, &mut params,
+                    )?;
+                    graph.write_parameters_flat_from_owner_order(&params, &segments, world_size)?;
+
+                    // 6. Bit-exact weight verification around the ring.
+                    let my_sum = graph.full_model_weight_checksum()?;
+                    let all_sum = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_sum,
+                    )?;
+                    let in_sync = all_sum.iter().all(|(_, cs)| cs == &my_sum);
+                    let comm_seconds = comm_started.elapsed().as_secs_f64();
+                    let total_seconds = compute_seconds + comm_seconds;
+                    let tokens_per_second = if total_seconds > 0.0 && total_tokens > 0 {
+                        total_tokens as f64 / total_seconds
+                    } else {
+                        0.0
+                    };
+                    eprintln!(
+                        "zero1_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
+                        in_sync, tokens_per_second
+                    );
+                    if !in_sync {
+                        eprintln!(
+                            "WARNING zero1 weight divergence at optimizer_step={optimizer_step}"
+                        );
+                    }
+                }
+                DistributedTopology::ParamServer(channels) => {
+                    match channels {
                 DistributedRankChannels::Replica {
                     grad_sink,
                     grad_ctl,
@@ -5884,6 +6104,7 @@ fn run_distributed_epochs(
                         "distributed_window rank={rank} gradient_stream_chunks={} gradient_stream_values={} optimizer_step={optimizer_step} compute_seconds={compute_seconds:.2}",
                         stream.chunk_count, stream.value_count
                     );
+                }
                 }
             }
             }
