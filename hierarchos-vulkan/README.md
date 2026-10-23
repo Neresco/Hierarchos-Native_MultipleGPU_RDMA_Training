@@ -99,6 +99,80 @@ this does not imply identical RNG streams to an arbitrary PyTorch run.
 See [COMPATIBILITY.md](COMPATIBILITY.md) for reproducible validation commands,
 the tested scope, and remaining work toward full Transformers parity.
 
+## Multi-GPU and multi-node distributed training
+
+`hierarchos-vulkan-train` supports data-parallel training across multiple GPUs
+and multiple machines over **RoCE (RDMA)**. The gradient exchange runs over a
+dedicated `roce*` device; small metadata and checkpoints travel over a TCP
+control channel. Three distributed modes are available via
+`--distributed-mode`:
+
+| mode | ranks | communication per window | use for |
+|---|---|---|---|
+| `param-server` (default) | 2 | replica streams its gradient to the primary; primary broadcasts the **merged gradient** (R5(b), ~1/3 of the full state) back | minimum-comms 2-node training |
+| `allreduce` | N | ring reduce-scatter + allgather of the full gradient; every rank runs its own identical optimizer step | maximum acceleration |
+| `zero1` | N | full gradient allreduce + **sharded AdamW moments** (each rank owns `tensor % world == rank`) + parameter allgather | VRAM extension for large models |
+
+### CLI
+
+Common distributed flags (all in addition to the normal training flags):
+
+```
+--rank R                 this rank's index (0-based)
+--world-size N           total rank count
+--rdma-device rocep7s0   local RoCE device name (`ibv_devinfo`)
+--distributed-mode {param-server,allreduce,zero1}
+--peer-ip H              single peer (2-rank param-server)
+--peer-ips H1,H2,...     one IP per rank (allreduce/zero1, N>=2)
+--rendezvous HOST:PORT   optional N-rank startup barrier (see below)
+```
+
+For N-rank allreduce/zero1 the ranks form a ring; the slowest rank to finish its
+forward/backward gates the group, so exclude very slow GPUs (e.g. a laptop
+iGPU) from acceleration runs. `--gradient-accumulation-steps` (GAS) must be >=
+world size or a rank's shard within a window is empty.
+
+### Rendezvous barrier
+
+Cross-node N-rank starts need a barrier so fast and slow machines form the ring
+at the same moment. Run `hierarchos-vulkan-rendezvous` on one node:
+
+```
+hierarchos-vulkan-rendezvous --listen 0.0.0.0:18599 --world-size N --state-file ~/hierarchos-rdz/state.json
+```
+
+then pass `--rendezvous HOST:18599` to every rank. The server holds ranks until
+N have checked in, then sends GO. `state.json` feeds the dashboard.
+
+### Verified results (60M-param coherent-v9 model)
+
+- **Loss parity** vs single-node: distributed mean loss matches the single-node
+  loss to the 4th decimal; every rank reports `weights_in_sync=true` and an
+  identical `weight_checksum` each window. (Checksums differ *between*
+  single-node and multi-GPU because the ring allreduce sums gradients in a
+  different float order than single-GPU accumulation — expected FP divergence
+  through AdamW, not a correctness bug.)
+- **6-GPU cross-machine allreduce**: PC1 (4x RX 9060 XT) + PC2 (RX 7600 XT +
+  8060S iGPU) over RoCE at ~2.9 GB/s, all ranks in sync, rank 0 exports a valid
+  checkpoint.
+- **ZeRO-1 VRAM extension**: sharded AdamW moments save `(world-1)/world` of the
+  optimizer-state VRAM. Checkpoint export ring-allgathers the sharded moments so
+  rank 0 writes a complete `optimizer.safetensors`.
+- **R5(b) param-only broadcast**: in param-server mode the primary now sends the
+  merged gradient (~121 MB) + its metadata instead of the full params + moments
+  (~363 MB); the replica runs its own bit-identical optimizer step.
+- **Throughput** (batch=64, 3 discrete GPUs): ~3x data-parallel speedup;
+  communication is 0.5-7.6% of compute (negligible, so comm/compute overlap is
+  not worth adding).
+
+### Caveat: do not train on the desktop GPU
+
+On a machine where one of the compute GPUs also drives the display (gnome-shell
+/ Wayland), high-VRAM training (e.g. batch=64) can exhaust the compositor's VRAM
+or fault the GPU, crashing the desktop and triggering an automatic reboot. Use
+only the compute-only GPUs for big runs (identify them with the
+`hierarchos-vulkan-devices` binary plus `/sys/class/drm/card*/status`).
+
 ## Training-kernel optimizations and verification
 
 The October 15, 2026 optimization work changes kernel memory reuse, command
