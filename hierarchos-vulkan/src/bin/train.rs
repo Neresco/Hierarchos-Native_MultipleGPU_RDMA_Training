@@ -6044,8 +6044,14 @@ fn run_distributed_epochs(
                     weight_source,
                     weight_ctl,
                 } => {
-                    // Detach the open window's gradients, send the metadata then
-                    // the chunk stream, close the window, adopt the new state.
+                    // R5(b) param-only broadcast: stream our own gradient to the
+                    // primary, then receive the primary's MERGED gradient
+                    // (model-sized, ~121MB) plus the primary's own pre-merge
+                    // metadata. Write the merged gradient in, merge the primary's
+                    // counters, and run our own optimizer step — bit-identical to
+                    // the primary's because AdamW is deterministic on identical
+                    // (gradient, counters, moments). Saves the ~242MB of optimizer
+                    // moments the full-state broadcast used to send each window.
                     let source = graph.full_model_pending_gradient_transport_source()?;
                     let mut line = serde_json::to_string(&source.metadata)?;
                     line.push('\n');
@@ -6056,16 +6062,39 @@ fn run_distributed_epochs(
                         grad_sink,
                         args.gradient_stream_chunk_values,
                     )?;
-                    graph.discard_full_model_accumulation_after_overflow()?;
-                    let state =
-                        HierarchosFullModelReplicaState::receive_full_model_replica_state_over_remote(
-                            weight_source, weight_ctl,
-                        )?;
-                    graph.load_full_model_replica_state(&state)?;
-                    optimizer_step = state.optimizer.step;
+                    // Receive the primary's own (pre-merge) metadata.
+                    let mut prim_meta_line = String::new();
+                    BufReader::new(weight_ctl).read_line(&mut prim_meta_line)?;
+                    let primary_metadata: PendingGradientShardMetadata =
+                        serde_json::from_str(prim_meta_line.trim())
+                            .context("param-only primary metadata")?;
+                    // Receive the merged gradient (model-sized flat f32 buffer).
+                    let total_values = graph.pending_gradient_total_values(&source);
+                    let mut merged_flat = vec![0f32; total_values];
+                    let mut received = 0usize;
+                    while received < total_values {
+                        let got = weight_source.receive_into(&mut merged_flat[received..])?;
+                        received += got;
+                    }
+                    // Write the merged gradient in, merge the primary's counters.
+                    graph.write_full_model_pending_gradients_flat(&source, &merged_flat)?;
+                    let plan = graph.plan_pending_gradient_merge(&primary_metadata)?;
+                    graph.commit_pending_gradient_merge(plan);
+                    // Run our own optimizer step on the merged gradient.
+                    let finish = graph.finish_full_model_accumulation_with_gradient_clipping(
+                        hyper,
+                        args.grad_clip,
+                    )?;
+                    anyhow::ensure!(
+                        finish.stepped,
+                        "param-only replica window rejected non-finite gradients; global_norm={}",
+                        finish.total_norm
+                    );
+                    optimizer_step = finish.full_model_optimizer.step;
+                    let my_sum = graph.full_model_weight_checksum()?;
                     eprintln!(
-                        "distributed_window rank={rank} gradient_stream_chunks={} gradient_stream_values={} optimizer_step={optimizer_step} compute_seconds={compute_seconds:.2}",
-                        stream.chunk_count, stream.value_count
+                        "distributed_window rank={rank} mode=param-only gradient_stream_chunks={} gradient_stream_values={} weight_broadcast_bytes={} optimizer_step={optimizer_step} weight_checksum={my_sum} compute_seconds={compute_seconds:.2}",
+                        stream.chunk_count, stream.value_count, total_values * 4
                     );
                 }
                 DistributedRankChannels::Primary {
@@ -6074,6 +6103,12 @@ fn run_distributed_epochs(
                     weight_sink,
                     weight_ctl,
                 } => {
+                    // R5(b) param-only broadcast: capture our own (pre-merge)
+                    // metadata, accumulate the replica's streamed gradient, then
+                    // send the MERGED gradient (~121MB) plus our own metadata to
+                    // the replica — which runs its own identical optimizer step.
+                    // Saves ~242MB of optimizer moments vs the full-state path.
+                    let primary_metadata = graph.full_model_pending_gradient_metadata()?;
                     let mut line = String::new();
                     BufReader::new(grad_ctl).read_line(&mut line)?;
                     let metadata: PendingGradientShardMetadata =
@@ -6084,6 +6119,19 @@ fn run_distributed_epochs(
                             &metadata,
                             args.gradient_stream_chunk_values,
                         )?;
+                    // Read the merged gradient and broadcast it + our own metadata.
+                    let source = graph.full_model_pending_gradient_transport_source()?;
+                    let merged_flat = graph.read_full_model_pending_gradients_flat(&source)?;
+                    let mut prim_meta_wire = serde_json::to_string(&primary_metadata)?;
+                    prim_meta_wire.push('\n');
+                    weight_ctl.write_all(prim_meta_wire.as_bytes())?;
+                    weight_ctl.flush()?;
+                    let chunk_values = DISTRIBUTED_WEIGHT_CHUNK_BYTES / 4;
+                    for chunk in merged_flat.chunks(chunk_values) {
+                        weight_sink.send_chunk(chunk)?;
+                    }
+                    weight_sink.flush()?;
+                    // Run our own optimizer step on the merged gradient.
                     let finish = graph.finish_full_model_accumulation_with_gradient_clipping(
                         hyper,
                         args.grad_clip,
@@ -6094,15 +6142,10 @@ fn run_distributed_epochs(
                         finish.total_norm
                     );
                     optimizer_step = finish.full_model_optimizer.step;
-                    let state = graph.full_model_replica_state()?;
-                    state.send_full_model_replica_state_over_remote(
-                        weight_sink,
-                        weight_ctl,
-                        DISTRIBUTED_WEIGHT_CHUNK_BYTES,
-                    )?;
+                    let my_sum = graph.full_model_weight_checksum()?;
                     eprintln!(
-                        "distributed_window rank={rank} gradient_stream_chunks={} gradient_stream_values={} optimizer_step={optimizer_step} compute_seconds={compute_seconds:.2}",
-                        stream.chunk_count, stream.value_count
+                        "distributed_window rank={rank} mode=param-only gradient_stream_chunks={} gradient_stream_values={} weight_broadcast_bytes={} optimizer_step={optimizer_step} weight_checksum={my_sum} compute_seconds={compute_seconds:.2}",
+                        stream.chunk_count, stream.value_count, merged_flat.len() * 4
                     );
                 }
                 }

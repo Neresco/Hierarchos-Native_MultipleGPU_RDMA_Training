@@ -18650,7 +18650,7 @@ impl HierarchosTrainingGraph {
             .gradient_state_snapshot_with_override(override_gradient)
     }
 
-    fn full_model_pending_gradient_metadata(&self) -> Result<PendingGradientShardMetadata> {
+    pub fn full_model_pending_gradient_metadata(&self) -> Result<PendingGradientShardMetadata> {
         if !self.full_model_accumulation_open {
             bail!("pending full-model gradient shard requires an open accumulation window");
         }
@@ -20391,6 +20391,22 @@ impl HierarchosTrainingGraph {
             peak_host_heap_gradient_bytes: chunk_capacity * std::mem::size_of::<f32>() * 3,
             queue_submissions: submission_count,
         })
+    }
+
+    /// Total f32 value count of the pending gradient for a transport source.
+    /// The gradient is model-sized (one f32 per parameter), so this is the
+    /// same value on every rank; used to size the receive buffer for the
+    /// Phase R5(b) merged-gradient broadcast.
+    pub fn pending_gradient_total_values(
+        &self,
+        source: &HierarchosPendingGradientTransportSource,
+    ) -> usize {
+        source
+            .optimizer
+            .gradient_layout()
+            .iter()
+            .map(|(_, len)| *len)
+            .sum()
     }
 
     /// Read every pending gradient value into a single flat host vector, in
