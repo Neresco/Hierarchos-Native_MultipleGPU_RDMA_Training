@@ -5939,7 +5939,7 @@ fn run_distributed_epochs(
                         0.0
                     };
                     eprintln!(
-                        "allreduce_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
+                        "allreduce_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} weight_checksum={my_sum} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
                         in_sync, tokens_per_second
                     );
                     if !in_sync {
@@ -6027,7 +6027,7 @@ fn run_distributed_epochs(
                         0.0
                     };
                     eprintln!(
-                        "zero1_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
+                        "zero1_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} weight_checksum={my_sum} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
                         in_sync, tokens_per_second
                     );
                     if !in_sync {
@@ -8392,6 +8392,12 @@ fn run() -> Result<()> {
             );
             if optimizer_step > previous_optimizer_step {
                 advance_lr_schedule(&mut schedule)?;
+                // Emit a per-step weight checksum for distributed parity
+                // comparison (matches the distributed allreduce/zero1 path).
+                let my_sum = graph.full_model_weight_checksum()?;
+                eprintln!(
+                    "single_window optimizer_step={optimizer_step} weight_checksum={my_sum}"
+                );
             } else if loss_scaling.is_some() {
                 account_skipped_training_batch(
                     &mut skipped_train_batches,
