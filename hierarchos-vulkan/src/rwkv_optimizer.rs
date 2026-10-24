@@ -1521,6 +1521,15 @@ pub(crate) struct RwkvPersistentAdamW {
     /// coefficient; the sharded exclusion (permanently_inactive_names) applies
     /// only to the AdamW step, not the norm.
     zero1_sharded: bool,
+    /// ZeRO-2 gradient-sharding flag. When true, the caller may stub the
+    /// non-owned `accumulated_grad` buffers between the optimizer finish and
+    /// the next window's gradient reset (see `zero2_stub_nonowned_gradients`
+    /// / `zero2_unstub_gradients`). The owned set is identical to ZeRO-1
+    /// (`i % world == rank`, tracked by `permanently_inactive_names`).
+    zero2_sharded: bool,
+    /// Whether the non-owned `accumulated_grad` buffers are currently stubbed
+    /// to 1-element. True after a finish, false after an unstub/reset.
+    zero2_gradients_stubbed: bool,
     gradient_accumulate: vulkan::ComputeKernel,
     gradient_accumulate4: Option<vulkan::ComputeKernel>,
     gradient_accumulate8: Option<vulkan::ComputeKernel>,
@@ -1747,6 +1756,8 @@ impl RwkvPersistentAdamW {
             slots,
             permanently_inactive_names: HashSet::new(),
             zero1_sharded: false,
+            zero2_sharded: false,
+            zero2_gradients_stubbed: false,
             parameter_mirror_refresher: None,
             generation_guard: Arc::new(OptimizerGenerationGuard::default()),
         })
@@ -1782,6 +1793,71 @@ impl RwkvPersistentAdamW {
             optimizer.permanently_inactive_names.insert(slot.name.clone());
         }
         Ok(optimizer)
+    }
+
+    /// ZeRO-2 construction: ZeRO-1 moment sharding plus per-window gradient
+    /// sharding. The optimizer starts with full `accumulated_grad` buffers (so
+    /// the first window's gradient reset is well-formed); the caller then
+    /// stubs the non-owned gradients after each finish and un-stubs them before
+    /// the next window's reset. Ownership matches ZeRO-1 (`i % world == rank`)
+    /// and is recorded in `permanently_inactive_names`.
+    pub(crate) fn new_zero2_sharded(
+        device: VulkanDevice,
+        trainables: &[RwkvTrainableRef<'_>],
+        rank: usize,
+        world_size: usize,
+    ) -> Result<Self> {
+        let mut optimizer = Self::new_sharded(device, trainables, rank, world_size)?;
+        optimizer.zero2_sharded = true;
+        optimizer.zero2_gradients_stubbed = false;
+        Ok(optimizer)
+    }
+
+    /// Replace every non-owned `accumulated_grad` with a 1-element stub, freeing
+    /// `P - P/world` of steady-state VRAM. The full buffers are only needed up
+    /// to and including the clip; the owned step never reads non-owned slots.
+    /// No-op when already stubbed or not a ZeRO-2 optimizer.
+    pub(crate) fn zero2_stub_nonowned_gradients(&mut self) -> Result<()> {
+        if !self.zero2_sharded || self.zero2_gradients_stubbed {
+            return Ok(());
+        }
+        for slot in &mut self.slots {
+            if self
+                .permanently_inactive_names
+                .contains(slot.name.as_str())
+                && slot.accumulated_grad.f32_capacity() > 1
+            {
+                slot.accumulated_grad = GpuBuffer::zeros_f32(&self.device, 1)?;
+            }
+        }
+        self.zero2_gradients_stubbed = true;
+        Ok(())
+    }
+
+    /// Reallocate full `accumulated_grad` for every non-owned slot so the next
+    /// window's gradient reset (`record_zero_grad`) and accumulation are
+    /// well-formed. Must be called before the backward tape. No-op when not
+    /// stubbed or not a ZeRO-2 optimizer.
+    pub(crate) fn zero2_unstub_gradients(&mut self) -> Result<()> {
+        if !self.zero2_sharded || !self.zero2_gradients_stubbed {
+            return Ok(());
+        }
+        for slot in &mut self.slots {
+            if self
+                .permanently_inactive_names
+                .contains(slot.name.as_str())
+                && slot.accumulated_grad.f32_capacity() == 1
+            {
+                slot.accumulated_grad = GpuBuffer::zeros_f32(&self.device, slot.len)?;
+            }
+        }
+        self.zero2_gradients_stubbed = false;
+        Ok(())
+    }
+
+    /// Whether the non-owned `accumulated_grad` buffers are currently stubbed.
+    pub(crate) fn zero2_gradients_are_stubbed(&self) -> bool {
+        self.zero2_gradients_stubbed
     }
 
     /// Restrict optimizer mutation to tensors whose canonical name is exactly

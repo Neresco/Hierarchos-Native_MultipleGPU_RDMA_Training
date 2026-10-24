@@ -800,13 +800,16 @@ fn validate_args(args: &Args) -> Result<()> {
         anyhow::ensure!(
             args.distributed_mode == "param-server"
                 || args.distributed_mode == "allreduce"
-                || args.distributed_mode == "zero1",
-            "--distributed-mode must be 'param-server', 'allreduce', or 'zero1'"
+                || args.distributed_mode == "zero1"
+                || args.distributed_mode == "zero2",
+            "--distributed-mode must be 'param-server', 'allreduce', 'zero1', or 'zero2'"
         );
         if args.world_size > 2 {
             anyhow::ensure!(
-                args.distributed_mode == "allreduce" || args.distributed_mode == "zero1",
-                "world-size > 2 requires --distributed-mode allreduce or zero1 (param-server is 2-rank only)"
+                args.distributed_mode == "allreduce"
+                    || args.distributed_mode == "zero1"
+                    || args.distributed_mode == "zero2",
+                "world-size > 2 requires --distributed-mode allreduce, zero1, or zero2 (param-server is 2-rank only)"
             );
             anyhow::ensure!(
                 args.peer_ips.len() == args.world_size,
@@ -5544,6 +5547,13 @@ enum DistributedTopology {
     Zero1 {
         ring: hierarchos_vulkan::distributed::RingTransport,
     },
+    /// ZeRO-2: like ZeRO-1, but the accumulated gradient is also sharded.
+    /// Non-owned `accumulated_grad` buffers are stubbed to 1-element after each
+    /// optimizer finish (freeing `P - P/world` steady-state VRAM) and
+    /// re-allocated full before the next window's gradient reset.
+    Zero2 {
+        ring: hierarchos_vulkan::distributed::RingTransport,
+    },
 }
 
 #[allow(dead_code)]
@@ -5638,11 +5648,15 @@ fn run_distributed_epochs(
     let grad_chunk_values = args.gradient_stream_chunk_values;
     // In allreduce mode BOTH channels carry gradient chunks, so the weight
     // channel must be sized to the gradient chunk width, not the weight width.
-    let weight_chunk_values = if args.distributed_mode == "allreduce" || args.distributed_mode == "zero1" {
-        grad_chunk_values
-    } else {
-        DISTRIBUTED_WEIGHT_CHUNK_BYTES / 4
-    };
+    let weight_chunk_values =
+        if args.distributed_mode == "allreduce"
+            || args.distributed_mode == "zero1"
+            || args.distributed_mode == "zero2"
+        {
+            grad_chunk_values
+        } else {
+            DISTRIBUTED_WEIGHT_CHUNK_BYTES / 4
+        };
 
     eprintln!(
         "distributed_training rank={rank} world_size={world_size} role={} peer={peer:?} rdma_device={rdma_device} grad_chunk_values={grad_chunk_values}",
@@ -5653,7 +5667,11 @@ fn run_distributed_epochs(
     // binds its listener before connecting to its successor). Param-server uses
     // two directional channels where the replica signals READY before the
     // primary connects to the weight port.
-    let mut topology: DistributedTopology = if args.distributed_mode == "allreduce" || args.distributed_mode == "zero1" {
+    let mut topology: DistributedTopology =
+        if args.distributed_mode == "allreduce"
+            || args.distributed_mode == "zero1"
+            || args.distributed_mode == "zero2"
+        {
         if let Some(rdz) = &args.rendezvous {
             rendezvous_wait(rdz, rank, world_size)?;
         }
@@ -5678,6 +5696,17 @@ fn run_distributed_epochs(
                 "distributed_training zero1 optimizer sharded rank={rank} world_size={world_size}"
             );
             DistributedTopology::Zero1 { ring }
+        } else if args.distributed_mode == "zero2" {
+            // ZeRO-2: ZeRO-1 moment sharding plus per-window gradient sharding.
+            // accumulated_grad starts full; the loop stubs non-owned gradients
+            // after each finish and un-stubs before the next backward.
+            graph
+                .shard_full_model_optimizer_zero2(rank, world_size)
+                .context("ZeRO-2 optimizer sharding")?;
+            eprintln!(
+                "distributed_training zero2 optimizer sharded rank={rank} world_size={world_size}"
+            );
+            DistributedTopology::Zero2 { ring }
         } else {
             DistributedTopology::AllReduce { ring }
         }
@@ -5736,7 +5765,10 @@ fn run_distributed_epochs(
     // mode each rank steps its own optimizer, so the graphs must start
     // identical (guaranteed by the deterministic model-package init) and no
     // broadcast is needed.
-    if args.distributed_mode != "allreduce" && args.distributed_mode != "zero1" {
+    if args.distributed_mode != "allreduce"
+        && args.distributed_mode != "zero1"
+        && args.distributed_mode != "zero2"
+    {
         if let DistributedTopology::ParamServer(channels) = &mut topology {
     match channels {
         DistributedRankChannels::Primary {
@@ -5851,6 +5883,14 @@ fn run_distributed_epochs(
                 eps: args.eps,
                 weight_decay: args.weight_decay,
             };
+
+            // ZeRO-2: the backward's gradient reset needs full-sized
+            // accumulated_grad. Un-stub the non-owned gradients before the tape.
+            if let DistributedTopology::Zero2 { .. } = &topology {
+                graph
+                    .zero2_unstub_gradients()
+                    .context("ZeRO-2 unstub before backward")?;
+            }
 
             let started = std::time::Instant::now();
             let result =
@@ -6036,6 +6076,102 @@ fn run_distributed_epochs(
                         );
                     }
                 }
+                DistributedTopology::Zero2 { ring } => {
+                    // ZeRO-2 window: identical to ZeRO-1 through the optimizer
+                    // step, then stub the non-owned accumulated gradients to
+                    // free steady-state VRAM before the parameter allgather.
+                    let source = graph.full_model_pending_gradient_transport_source()?;
+                    let my_metadata = source.metadata.clone();
+                    let my_meta_json = serde_json::to_string(&my_metadata)?;
+
+                    let comm_started = std::time::Instant::now();
+
+                    // 1. Allgather metadata around the ring (tiny, over TCP).
+                    let all_meta = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_meta_json,
+                    )?;
+                    let total_tokens: u64 = all_meta
+                        .iter()
+                        .map(|(_, j)| {
+                            serde_json::from_str::<PendingGradientShardMetadata>(j)
+                                .map(|m| m.consumed_token_count as u64)
+                                .unwrap_or(0)
+                        })
+                        .sum();
+
+                    // 2. Merge every peer's normalization counters (skip self).
+                    for (peer_rank, peer_json) in &all_meta {
+                        if *peer_rank == rank {
+                            continue;
+                        }
+                        let peer_metadata: PendingGradientShardMetadata =
+                            serde_json::from_str(peer_json)
+                                .with_context(|| format!("peer {} gradient metadata", peer_rank))?;
+                        let plan = graph.plan_pending_gradient_merge(&peer_metadata)?;
+                        graph.commit_pending_gradient_merge(plan);
+                    }
+
+                    // 3. Full gradient allreduce (accumulated_grad is full-sized on
+                    //    every rank after the unstub, so the ring sum is unchanged).
+                    let mut flat = graph.read_full_model_pending_gradients_flat(&source)?;
+                    hierarchos_vulkan::distributed::ring_allreduce_sum(
+                        ring, rank, world_size, &mut flat,
+                    )?;
+                    graph.write_full_model_pending_gradients_flat(&source, &flat)?;
+
+                    // 4. Local step: only this rank's owned slots update moments.
+                    //    The full gradient is present, so the global norm/clip
+                    //    coefficient is identical on every rank.
+                    let finish = graph.finish_full_model_accumulation_with_gradient_clipping(
+                        hyper, args.grad_clip,
+                    )?;
+                    anyhow::ensure!(
+                        finish.stepped,
+                        "zero2 optimizer window rejected non-finite gradients; global_norm={}",
+                        finish.total_norm
+                    );
+                    optimizer_step = finish.full_model_optimizer.step;
+
+                    // 5. Stub non-owned accumulated gradients now that the step is
+                    //    done. Frees P - P/world steady-state VRAM until the next
+                    //    window's unstub.
+                    graph
+                        .zero2_stub_nonowned_gradients()
+                        .context("ZeRO-2 stub after finish")?;
+
+                    // 6. Gather the post-step parameters: read this rank's owned
+                    //    tensors in owner order, ring-allgather the unequal
+                    //    segments, write the full model back.
+                    let (mut params, segments) =
+                        graph.read_parameters_flat_in_owner_order(world_size)?;
+                    hierarchos_vulkan::distributed::ring_allgather_sharded(
+                        ring, rank, world_size, &segments, &mut params,
+                    )?;
+                    graph.write_parameters_flat_from_owner_order(&params, &segments, world_size)?;
+
+                    // 7. Bit-exact weight verification around the ring.
+                    let my_sum = graph.full_model_weight_checksum()?;
+                    let all_sum = hierarchos_vulkan::distributed::ring_allgather_items(
+                        ring, rank, world_size, &my_sum,
+                    )?;
+                    let in_sync = all_sum.iter().all(|(_, cs)| cs == &my_sum);
+                    let comm_seconds = comm_started.elapsed().as_secs_f64();
+                    let total_seconds = compute_seconds + comm_seconds;
+                    let tokens_per_second = if total_seconds > 0.0 && total_tokens > 0 {
+                        total_tokens as f64 / total_seconds
+                    } else {
+                        0.0
+                    };
+                    eprintln!(
+                        "zero2_window rank={rank} world={world_size} optimizer_step={optimizer_step} weights_in_sync={} weight_checksum={my_sum} compute_seconds={compute_seconds:.2} comm_seconds={comm_seconds:.2} tokens_per_window={total_tokens} tokens_per_second={:.0}",
+                        in_sync, tokens_per_second
+                    );
+                    if !in_sync {
+                        eprintln!(
+                            "WARNING zero2 weight divergence at optimizer_step={optimizer_step}"
+                        );
+                    }
+                }
                 DistributedTopology::ParamServer(channels) => {
                     match channels {
                 DistributedRankChannels::Replica {
@@ -6192,13 +6328,17 @@ fn run_distributed_epochs(
         }
     }
 
-    // ZeRO-1: ring-allgather the sharded optimizer moments before checkpoint
-    // export so rank 0 has the full state instead of 1-element stubs.
-    if let DistributedTopology::Zero1 { ring } = &mut topology {
-        graph
-            .gather_zero1_optimizer_state(ring, rank, world_size)
-            .context("ZeRO-1 optimizer state export allgather")?;
-        eprintln!("zero1_export_optimizer_state_allgathered rank={rank}");
+    // ZeRO-1/ZeRO-2: ring-allgather the sharded optimizer moments before
+    // checkpoint export so rank 0 has the full state instead of 1-element
+    // stubs. ZeRO-2's gradient stubs do not affect the moment export.
+    match &mut topology {
+        DistributedTopology::Zero1 { ring } | DistributedTopology::Zero2 { ring } => {
+            graph
+                .gather_zero1_optimizer_state(ring, rank, world_size)
+                .context("ZeRO-1/2 optimizer state export allgather")?;
+            eprintln!("zero1_export_optimizer_state_allgathered rank={rank}");
+        }
+        _ => {}
     }
 
     if is_primary {

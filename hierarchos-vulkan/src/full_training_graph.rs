@@ -18620,6 +18620,71 @@ impl HierarchosTrainingGraph {
         Ok(())
     }
 
+    /// ZeRO-2 sharding: ZeRO-1 moment sharding plus per-window gradient
+    /// sharding. `accumulated_grad` starts full so the first window's gradient
+    /// reset is well-formed; the caller stubs non-owned gradients after each
+    /// finish ([`Self::zero2_stub_nonowned_gradients`]) and un-stubs them before
+    /// the next window's backward ([`Self::zero2_unstub_gradients`]).
+    pub fn shard_full_model_optimizer_zero2(
+        &mut self,
+        rank: usize,
+        world_size: usize,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            !self.full_model_accumulation_open,
+            "optimizer sharding requires a closed accumulation window"
+        );
+        let Self {
+            h_recurrent,
+            l_recurrent,
+            projections,
+            token_frontend,
+            output,
+            device,
+            ..
+        } = self;
+        let registry = full_model_named_trainables(
+            h_recurrent,
+            l_recurrent,
+            projections,
+            token_frontend.as_ref(),
+            output,
+        )?;
+        let trainables = registry
+            .iter()
+            .map(NamedTrainable::as_trainable)
+            .collect::<Vec<_>>();
+        let optimizer = RwkvPersistentAdamW::new_zero2_sharded(
+            device.clone(),
+            &trainables,
+            rank,
+            world_size,
+        )?;
+        self.full_model_optimizer = optimizer;
+        Ok(())
+    }
+
+    /// Reallocate full `accumulated_grad` for non-owned slots before the next
+    /// window's gradient reset. No-op unless the optimizer is ZeRO-2 and the
+    /// gradients are currently stubbed.
+    pub fn zero2_unstub_gradients(&mut self) -> Result<()> {
+        self.full_model_optimizer.zero2_unstub_gradients()
+    }
+
+    /// Stub non-owned `accumulated_grad` buffers to 1-element after the
+    /// optimizer finish, freeing `P - P/world` of steady-state VRAM. No-op
+    /// unless the optimizer is ZeRO-2 and the gradients are not yet stubbed.
+    pub fn zero2_stub_nonowned_gradients(&mut self) -> Result<()> {
+        self.full_model_optimizer.zero2_stub_nonowned_gradients()
+    }
+
+    /// Vulkan suballocator stats for ZeRO-2 VRAM telemetry (live/reserved bytes
+    /// and block count). Used to verify the gradient stub actually releases
+    /// device memory.
+    pub fn vulkan_memory_stats(&self) -> Result<crate::vulkan::VulkanMemoryStats> {
+        self.device.memory_stats()
+    }
+
     /// Host/device exact global Adam step without reading moment payloads.
     /// Unlike [`Self::full_model_optimizer_state`], this stays valid for
     /// ZeRO-1 sharded optimizers whose non-owned slots keep 1-element moment
