@@ -184,6 +184,7 @@ struct Args {
     rdma_device: Option<String>,
     distributed_mode: String,
     json_events: bool,
+    cpu_offload: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -430,6 +431,7 @@ fn parse_args() -> Result<Args> {
     let mut rendezvous = None;
     let mut distributed_mode = "param-server".to_string();
     let mut json_events = false;
+    let mut cpu_offload = false;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -625,6 +627,7 @@ fn parse_args() -> Result<Args> {
             "--persist-state" => persist_state = true,
             "--no-shuffle" => shuffle = false,
             "--json-events" => json_events = true,
+            "--cpu-offload" => cpu_offload = true,
             "--help" | "-h" => {
                 println!(
                     "hierarchos-vulkan-train (--model MODEL_DIR | --resume-from-ckpt PACKAGE_DIR) --dataset TOKENS.jsonl|TOKEN_CACHE_DIR --output OUTPUT_DIR \
@@ -640,7 +643,7 @@ fn parse_args() -> Result<Args> {
                      [--remote-peer IP_ADDR] \
                      [--joint-runtime-profile vulkan_joint_runtime_profile.v1.json] \
                      [--lock-joint-runtime-profile] \
-                     [--persist-state] [--seed N] [--no-shuffle] [--json-events]\n\n\
+                     [--persist-state] [--seed N] [--no-shuffle] [--json-events] [--cpu-offload]\n\n\
                      --dataset accepts legacy tokenized JSONL or a Hierarchos schema-v6 token-cache directory.\n\
                      Token-cache directories are the cross-runtime parity path: Python/PyTorch and native Vulkan consume the same content-addressed records through index.safetensors + tokens.bin.\n\
                      JSONL rows require input_ids and may contain labels, attention_mask, and loss_weights. \
@@ -672,7 +675,11 @@ fn parse_args() -> Result<Args> {
                      therefore requires --no-shuffle plus lane-contiguous dataset ordering.\n\
                      --save-steps writes exact-resume Vulkan packages under OUTPUT/checkpoint-epoch-E-step-S. \
                      Persisted mid-epoch checkpoints include the PyTorch-compatible H/L/context/LTM/ROSA carrier.\n\
-                     --json-events emits single-line HIERARCHOS_EVENT JSON records on stderr for native GUI supervision."
+                     --json-events emits single-line HIERARCHOS_EVENT JSON records on stderr for native GUI supervision.\n\
+                     --cpu-offload (single-device only) copies recurrent/projection/out-norm parameters to host \
+                     memory after each optimizer window and back before the next, freeing their VRAM for larger models. \
+                     The tied lm_head stays on-GPU (it is reference-bound by the shared optimizer registry). Add \
+                     per-window offload/restore overhead; use with --gradient-accumulation-steps to amortize it."
                 );
                 std::process::exit(0);
             }
@@ -729,6 +736,7 @@ fn parse_args() -> Result<Args> {
         rendezvous,
         distributed_mode,
         json_events,
+        cpu_offload,
     };
     validate_args(&args)?;
     Ok(args)
@@ -5212,6 +5220,7 @@ fn train_zero_state_with_phase_aware_tape_geometry(
     readback: HierarchosTokenTapeReadbackPolicy,
     tape_geometry: Option<PhaseAwareTapeGeometry>,
 ) -> Result<HierarchosBudgetedTokenTapeTrainResult> {
+    graph.maybe_restore_offloaded()?;
     let Some(tape_geometry) = tape_geometry else {
         return graph.train_zero_state_raw_token_labeled_sequences_budgeted_with_update_mode(
             batch,
@@ -5298,6 +5307,7 @@ fn train_zero_state_with_phase_aware_tape_geometry_dynamic(
     loss_scaling: &mut HierarchosLossScalingState,
     device_resident_backward_scale: bool,
 ) -> Result<HierarchosBudgetedTokenTapeTrainResult> {
+    graph.maybe_restore_offloaded()?;
     let Some(tape_geometry) = tape_geometry else {
         return if device_resident_backward_scale {
             graph.train_zero_state_raw_token_labeled_sequences_budgeted_with_device_resident_dynamic_loss_scaling(
@@ -7894,6 +7904,16 @@ fn run() -> Result<()> {
             active_trainable_tensors, frozen_trainable_tensors, args.trainable_prefixes
         );
     }
+    if args.cpu_offload {
+        anyhow::ensure!(
+            args.remote_peer.is_none() && args.device_indices.is_none(),
+            "--cpu-offload is only supported on the single-device training path"
+        );
+        graph.enable_cpu_offload();
+        eprintln!(
+            "vulkan_cpu_offload enabled: model parameters will be swapped to host memory between optimizer windows"
+        );
+    }
     let training_precision = graph.training_precision_policy();
     let dynamic_loss_scaling_enabled = precision_uses_dynamic_loss_scaling(training_precision);
     let resumed_optimizer = args.resume_from_checkpoint;
@@ -8683,6 +8703,9 @@ fn run() -> Result<()> {
                 previous_context.fill(0.0);
                 target_context.fill(0.0);
             }
+            // CPU parameter offload happens only after checkpointing has read
+            // every parameter back, so stubbed buffers are never exported.
+            graph.maybe_offload()?;
             continue;
         }
         let batch_indices = cursor
@@ -8697,6 +8720,8 @@ fn run() -> Result<()> {
             .map(|&index| &dataset[index])
             .collect::<Vec<_>>();
         let packed = pack_batch(&batch_rows, config.vocab_size)?;
+        // Restore offloaded parameters before any tape is recorded for this window.
+        graph.maybe_restore_offloaded()?;
         let mut tape = if args.persist_state {
             match (carried_h_state.as_deref(), carried_l_state.as_deref()) {
                 (Some(h_state), Some(l_state)) => graph
@@ -8953,6 +8978,8 @@ fn run() -> Result<()> {
             previous_context.fill(0.0);
             target_context.fill(0.0);
         }
+        // CPU parameter offload after checkpointing has read every parameter.
+        graph.maybe_offload()?;
     }
 
     // The last optimizer window intentionally leaves its replica broadcast in

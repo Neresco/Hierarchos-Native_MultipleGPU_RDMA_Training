@@ -720,6 +720,51 @@ pub struct HierarchosTokenFrontendOp {
 }
 
 impl HierarchosTokenFrontendOp {
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        store.absorb(&self.device, "persistent", &self.persistent)?;
+        self.persistent = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, "rosa_gate_logit", &self.rosa_gate_logit)?;
+        self.rosa_gate_logit = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, "ltm.keys", &self.ltm_keys)?;
+        self.ltm_keys = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, "ltm.vals", &self.ltm_vals)?;
+        self.ltm_vals = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, "ltm_gate_logit", &self.ltm_gate_logit)?;
+        self.ltm_gate_logit = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.rosa_adapter.offload_params(store)?;
+        self.rosa_router.offload_params(store)?;
+        self.qproj.offload_params(store)?;
+        self.val_proj.offload_params(store)?;
+        self.ltm_router.offload_params(store)?;
+        self.in_proj.offload_params(store)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let mut take = |name: &str| -> Result<crate::vulkan::GpuBuffer> {
+            let buffer = store.release(&self.device, name)?;
+            store.forget(name);
+            Ok(buffer)
+        };
+        self.persistent = take("persistent")?;
+        self.rosa_gate_logit = take("rosa_gate_logit")?;
+        self.ltm_keys = take("ltm.keys")?;
+        self.ltm_vals = take("ltm.vals")?;
+        self.ltm_gate_logit = take("ltm_gate_logit")?;
+        self.rosa_adapter.restore_params(store)?;
+        self.rosa_router.restore_params(store)?;
+        self.qproj.restore_params(store)?;
+        self.val_proj.restore_params(store)?;
+        self.ltm_router.restore_params(store)?;
+        self.in_proj.restore_params(store)?;
+        Ok(())
+    }
     pub fn from_model_package(
         device: VulkanDevice,
         model_dir: impl AsRef<Path>,

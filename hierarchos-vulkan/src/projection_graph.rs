@@ -176,6 +176,7 @@ impl GraphPackedStateSlotOp {
 /// manager/worker invocations add into the persistent optimizer instead of
 /// overwriting one another.
 pub(crate) struct GraphProjectionOp {
+    device: VulkanDevice,
     prefix: String,
     weight_name: String,
     bias_name: Option<String>,
@@ -297,6 +298,7 @@ impl GraphProjectionOp {
             native_fp16_backward_compute: false,
             native_fp16_input_adjoint_compute: false,
             source_scaled_backward_domain: false,
+            device: device.clone(),
             linear_forward: vendor::VendorMatmulKernel::new_with_access(
                 &device,
                 vendor::VendorKernelFamily::LinearForward,
@@ -578,6 +580,33 @@ impl GraphProjectionOp {
         trainables
     }
 
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Weight is always present; bias is optional (guard mirrors trainables()).
+        store.absorb(&self.device, &self.weight_name, &self.weight)?;
+        self.weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        if let Some(bias_name) = self.bias_name.as_deref() {
+            store.absorb(&self.device, bias_name, self.bias.as_ref().unwrap())?;
+            self.bias = Some(crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.weight = store.release(&self.device, &self.weight_name)?;
+        store.forget(&self.weight_name);
+        if let Some(bias_name) = self.bias_name.as_ref() {
+            self.bias = Some(store.release(&self.device, bias_name)?);
+            store.forget(bias_name);
+        }
+        Ok(())
+    }
+
     pub(crate) fn output_buffer(&self) -> &GpuBuffer {
         &self.output
     }
@@ -712,6 +741,32 @@ pub(crate) struct ManagerWorkerProjectionGraph {
 }
 
 impl ManagerWorkerProjectionGraph {
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.l_feedback_proj.offload_params(store)?;
+        self.h_to_context.offload_params(store)?;
+        self.h_halt_proj.offload_params(store)?;
+        self.l_input_proj.offload_params(store)?;
+        self.context_drift_proj.offload_params(store)?;
+        self.l_to_out.offload_params(store)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.l_feedback_proj.restore_params(store)?;
+        self.h_to_context.restore_params(store)?;
+        self.h_halt_proj.restore_params(store)?;
+        self.l_input_proj.restore_params(store)?;
+        self.context_drift_proj.restore_params(store)?;
+        self.l_to_out.restore_params(store)?;
+        Ok(())
+    }
+
     pub(crate) fn from_model_package(
         device: VulkanDevice,
         model_dir: impl AsRef<Path>,

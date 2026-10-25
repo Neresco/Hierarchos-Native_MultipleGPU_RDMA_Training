@@ -7881,6 +7881,42 @@ mod tests {
         Ok(())
     }
 
+    /// Empirically check whether dropping a set of suballocated buffers releases
+    /// real driver VRAM (reserved_bytes). This determines whether CPU-offloading
+    /// model parameters actually reclaims memory. Allocates ~N buffers, records
+    /// reserved_bytes, drops them, and records reserved_bytes again.
+    #[test]
+    fn dropping_buffers_releases_reserved_bytes() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        let baseline = device.memory_stats()?.reserved_bytes;
+        // Allocate 30 buffers of 8MB each (240MB total, like a 60M model's params
+        // spread across tensors).
+        let values = vec![0.0f32; 2 * 1024 * 1024]; // 8MB each
+        let mut buffers: Vec<GpuBuffer> = Vec::with_capacity(30);
+        for _ in 0..30 {
+            buffers.push(GpuBuffer::from_f32(&device, &values)?);
+        }
+        let with_buffers = device.memory_stats()?.reserved_bytes;
+        eprintln!(
+            "suballoc_test baseline={} with_30x8MB={} delta={}",
+            baseline, with_buffers, with_buffers.saturating_sub(baseline)
+        );
+        drop(buffers);
+        let after_drop = device.memory_stats()?.reserved_bytes;
+        eprintln!(
+            "suballoc_test after_drop={} released={}",
+            after_drop, with_buffers.saturating_sub(after_drop)
+        );
+        assert!(
+            after_drop < with_buffers,
+            "dropping buffers must release reserved VRAM; baseline={} with={} after={}",
+            baseline,
+            with_buffers,
+            after_drop
+        );
+        Ok(())
+    }
+
     fn external_memory_test_device(
         index: usize,
         device_uuid: &str,

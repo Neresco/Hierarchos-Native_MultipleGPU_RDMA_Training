@@ -98,6 +98,7 @@ pub struct RwkvPackedCellResult {
 /// Vulkan here.
 pub struct RwkvCellSliceOp {
     device: VulkanDevice,
+    param_name_prefix: String,
     width: usize,
     head_size: usize,
     max_batch: usize,
@@ -193,14 +194,16 @@ impl RwkvCellSliceOp {
             max_batch,
             0.0,
         )?;
-        Self::new(
+        let mut op = Self::new(
             device,
             time_mix,
             channel_mix,
             deepembed_adapter,
             &ln1_weight,
             &ln1_bias,
-        )
+        )?;
+        op.param_name_prefix = cell_prefix.to_string();
+        Ok(op)
     }
 
     pub(crate) fn new(
@@ -255,6 +258,7 @@ impl RwkvCellSliceOp {
             .context("RWKV cell token-feature capacity overflow")?;
 
         Ok(Self {
+            param_name_prefix: String::new(),
             layer_norm_forward: vulkan::ComputeKernel::new(
                 &device,
                 LAYER_NORM_FORWARD_SPV,
@@ -922,6 +926,41 @@ impl RwkvCellSliceOp {
         Ok(trainables)
     }
 
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Own parameters (canonical names match trainables()).
+        let p = crate::param_offload::prefixed_name;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "ln1.weight"), &self.ln1_weight)?;
+        self.ln1_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "ln1.bias"), &self.ln1_bias)?;
+        self.ln1_bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        // Owned sub-ops (their trainables are folded into this op's registry).
+        self.time_mix.offload_params(store)?;
+        self.channel_mix.offload_params(store)?;
+        self.deepembed_adapter.offload_params(store)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.ln1_weight = take(p(&self.param_name_prefix, "ln1.weight"))?;
+        self.ln1_bias = take(p(&self.param_name_prefix, "ln1.bias"))?;
+        self.time_mix.restore_params(store)?;
+        self.channel_mix.restore_params(store)?;
+        self.deepembed_adapter.restore_params(store)?;
+        Ok(())
+    }
+
     fn validate_batch(&self, batch: usize) -> Result<()> {
         if batch == 0 || batch > self.max_batch {
             bail!(
@@ -960,6 +999,20 @@ pub struct RwkvPackedCellOp {
 }
 
 impl RwkvPackedCellOp {
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.cell.offload_params(store)
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.cell.restore_params(store)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn from_model_package(
         device: VulkanDevice,

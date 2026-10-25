@@ -169,6 +169,7 @@ pub struct RwkvPostMixResult {
 /// storage.
 pub struct RwkvPostMixOp {
     device: VulkanDevice,
+    param_name_prefix: String,
     width: usize,
     head_size: usize,
     heads: usize,
@@ -257,7 +258,7 @@ impl RwkvPostMixOp {
             );
         }
         let output_weight = read_matrix(&path, &format!("{prefix}.output.weight"), width)?;
-        Self::new(
+        let mut op = Self::new(
             device,
             width,
             head_size,
@@ -266,7 +267,9 @@ impl RwkvPostMixOp {
             &norm_bias,
             &r_k,
             &output_weight,
-        )
+        )?;
+        op.param_name_prefix = prefix.to_string();
+        Ok(op)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -420,6 +423,7 @@ impl RwkvPostMixOp {
         };
 
         Ok(Self {
+            param_name_prefix: String::new(),
             group_norm_forward: vulkan::ComputeKernel::new(
                 &device,
                 GROUP_NORM_FORWARD_SPV,
@@ -1271,6 +1275,52 @@ impl RwkvPostMixOp {
                 decay_class: RwkvDecayClass::Decay,
             },
         ]
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Canonical names match trainables(); prefix keeps h/l cells distinct.
+        let p = crate::param_offload::prefixed_name;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "ln_x.weight"),
+            &self.group_norm_weight,
+        )?;
+        self.group_norm_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "ln_x.bias"),
+            &self.group_norm_bias,
+        )?;
+        self.group_norm_bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "r_k"), &self.r_k)?;
+        self.r_k = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "output.weight"),
+            &self.output_weight,
+        )?;
+        self.output_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.group_norm_weight = take(p(&self.param_name_prefix, "ln_x.weight"))?;
+        self.group_norm_bias = take(p(&self.param_name_prefix, "ln_x.bias"))?;
+        self.r_k = take(p(&self.param_name_prefix, "r_k"))?;
+        self.output_weight = take(p(&self.param_name_prefix, "output.weight"))?;
+        Ok(())
     }
 
     pub(crate) fn record_readback(

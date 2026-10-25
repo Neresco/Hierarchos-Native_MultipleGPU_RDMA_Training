@@ -8028,6 +8028,9 @@ pub struct HierarchosTrainingGraph {
     ltm_alignment_writer_norm_reducer: Option<VulkanGradientL2NormReducer>,
     ltm_alignment_readback_pending: bool,
     pending_dynamic_loss_scale_observation: Option<HierarchosLossScaleStepDecision>,
+    /// Optional CPU parameter store. When `Some`, model parameters are swapped
+    /// to host memory between optimizer windows to free device VRAM.
+    cpu_offload_store: Option<crate::param_offload::ParamOffloadStore>,
     pending_dynamic_loss_scale_observation_wait: Option<vulkan::SubmissionTimelineWait>,
     val_proj_active_in_window: bool,
     ltm_alignment_pytorch_tbptt_weighting_in_window: Option<bool>,
@@ -8135,6 +8138,87 @@ pub struct HierarchosTrainingGraph {
 }
 
 impl HierarchosTrainingGraph {
+    /// Copy every offloadable model parameter to the CPU store and replace the
+    /// GPU buffers with 1-element stubs, freeing device VRAM between optimizer
+    /// windows. Must be paired with [`Self::restore_model_params`] before the
+    /// next token tape is recorded.
+    pub fn offload_model_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.h_recurrent.offload_params(store)?;
+        self.l_recurrent.offload_params(store)?;
+        self.projections.offload_params(store)?;
+        if let Some(frontend) = self.token_frontend.as_mut() {
+            frontend.offload_params(store)?;
+        }
+        self.output.offload_params(store)?;
+        Ok(())
+    }
+
+    /// Reallocate the GPU parameter buffers and copy values back from the CPU
+    /// store, restoring the model to its pre-offload state.
+    pub fn restore_model_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.h_recurrent.restore_params(store)?;
+        self.l_recurrent.restore_params(store)?;
+        self.projections.restore_params(store)?;
+        if let Some(frontend) = self.token_frontend.as_mut() {
+            frontend.restore_params(store)?;
+        }
+        self.output.restore_params(store)?;
+        Ok(())
+    }
+
+    /// Enable CPU parameter offload for this graph. Subsequent calls to
+    /// [`Self::maybe_offload`] will move parameters to host memory and
+    /// [`Self::maybe_restore_offloaded`] will bring them back before the next
+    /// token tape is recorded.
+    pub fn enable_cpu_offload(&mut self) {
+        self.cpu_offload_store.get_or_insert_with(crate::param_offload::ParamOffloadStore::new);
+    }
+
+    /// True when CPU parameter offload is enabled for this graph.
+    pub fn cpu_offload_enabled(&self) -> bool {
+        self.cpu_offload_store.is_some()
+    }
+
+    /// Restore offloaded parameters from the CPU store, if any are pending.
+    /// A no-op when offload is disabled or nothing is currently offloaded.
+    pub fn maybe_restore_offloaded(&mut self) -> Result<()> {
+        let Some(mut store) = self.cpu_offload_store.take() else {
+            return Ok(());
+        };
+        if !store.is_empty() {
+            let result = self.restore_model_params(&mut store);
+            self.cpu_offload_store = Some(store);
+            return result;
+        }
+        self.cpu_offload_store = Some(store);
+        Ok(())
+    }
+
+    /// Offload parameters to the CPU store, if offload is enabled.
+    /// A no-op when offload is disabled.
+    pub fn maybe_offload(&mut self) -> Result<()> {
+        let Some(mut store) = self.cpu_offload_store.take() else {
+            return Ok(());
+        };
+        let result = self.offload_model_params(&mut store);
+        self.cpu_offload_store = Some(store);
+        result
+    }
+
+    /// Return the number of offloaded parameters and host bytes held, or `None`
+    /// when offload is disabled.
+    pub fn cpu_offload_stats(&self) -> Option<(usize, usize)> {
+        self.cpu_offload_store
+            .as_ref()
+            .map(|s| (s.param_count(), s.offloaded_bytes()))
+    }
+
     /// Validate a PyTorch-shaped persistent recurrent carrier and restore its
     /// bounded ROSA state into the live Vulkan token frontend. H/L/context
     /// tensors stay host-owned at the outer trainer boundary and are returned to
@@ -9276,6 +9360,7 @@ impl HierarchosTrainingGraph {
             ltm_alignment_writer_norm_reducer,
             ltm_alignment_readback_pending: false,
             pending_dynamic_loss_scale_observation: None,
+            cpu_offload_store: None,
             pending_dynamic_loss_scale_observation_wait: None,
             val_proj_active_in_window: false,
             ltm_alignment_pytorch_tbptt_weighting_in_window: None,

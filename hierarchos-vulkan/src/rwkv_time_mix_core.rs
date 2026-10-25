@@ -830,6 +830,7 @@ pub struct RwkvFullTimeMixResult {
 /// the same safetensors used by CUDA/PyTorch inference.
 pub struct RwkvTimeMixCoreOp {
     device: VulkanDevice,
+    param_name_prefix: String,
     width: usize,
     head_size: usize,
     heads: usize,
@@ -1167,7 +1168,7 @@ impl RwkvTimeMixCoreOp {
         let value_weight =
             read_matrix_tensor(&tensor_path, &format!("{prefix}.value.weight"), width)?;
 
-        Self::new(
+        let mut op = Self::new(
             device,
             width,
             head_size,
@@ -1180,7 +1181,9 @@ impl RwkvTimeMixCoreOp {
             &value_weight,
             &k_k,
             &k_a,
-        )
+        )?;
+        op.param_name_prefix = prefix.to_string();
+        Ok(op)
     }
 
     /// Load the recurrent r/k/v core and the low-rank a/w/g branches from the
@@ -1945,6 +1948,7 @@ impl RwkvTimeMixCoreOp {
         };
 
         let mut op = Self {
+            param_name_prefix: String::new(),
             time_mix_forward: vulkan::ComputeKernel::new(
                 &device,
                 TIME_MIX_FORWARD_SPV,
@@ -7271,6 +7275,73 @@ impl RwkvTimeMixCoreOp {
                 .trainables(),
         );
         Ok(trainables)
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Core parameters (canonical names match trainables()).
+        let p = crate::param_offload::prefixed_name;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "x_r"), &self.mix_r)?;
+        self.mix_r = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "x_k"), &self.mix_k)?;
+        self.mix_k = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "x_v"), &self.mix_v)?;
+        self.mix_v = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "receptance.weight"),
+            &self.receptance_weight,
+        )?;
+        self.receptance_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "key.weight"), &self.key_weight)?;
+        self.key_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "value.weight"),
+            &self.value_weight,
+        )?;
+        self.value_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "k_k"), &self.k_k)?;
+        self.k_k = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "k_a"), &self.k_a)?;
+        self.k_a = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        // Delegated sub-ops (their trainables are folded into this op's registry).
+        if let Some(low_rank) = self.low_rank.as_mut() {
+            low_rank.offload_params(store)?;
+        }
+        if let Some(post_mix) = self.post_mix.as_mut() {
+            post_mix.offload_params(store)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.mix_r = take(p(&self.param_name_prefix, "x_r"))?;
+        self.mix_k = take(p(&self.param_name_prefix, "x_k"))?;
+        self.mix_v = take(p(&self.param_name_prefix, "x_v"))?;
+        self.receptance_weight = take(p(&self.param_name_prefix, "receptance.weight"))?;
+        self.key_weight = take(p(&self.param_name_prefix, "key.weight"))?;
+        self.value_weight = take(p(&self.param_name_prefix, "value.weight"))?;
+        self.k_k = take(p(&self.param_name_prefix, "k_k"))?;
+        self.k_a = take(p(&self.param_name_prefix, "k_a"))?;
+        if let Some(low_rank) = self.low_rank.as_mut() {
+            low_rank.restore_params(store)?;
+        }
+        if let Some(post_mix) = self.post_mix.as_mut() {
+            post_mix.restore_params(store)?;
+        }
+        Ok(())
     }
 
     pub fn device_name(&self) -> &str {

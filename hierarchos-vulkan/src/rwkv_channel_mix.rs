@@ -127,6 +127,7 @@ pub struct RwkvChannelMixResult {
 /// changing this graph or checkpoint layout.
 pub struct RwkvChannelMixOp {
     device: VulkanDevice,
+    param_name_prefix: String,
     width: usize,
     hidden_width: usize,
     max_batch: usize,
@@ -219,7 +220,7 @@ impl RwkvChannelMixOp {
             width,
             width * 4,
         )?;
-        Self::new(
+        let mut op = Self::new(
             device,
             width,
             max_batch,
@@ -230,7 +231,9 @@ impl RwkvChannelMixOp {
             &value_weight,
             key_clamp,
             deepembed_clamp,
-        )
+        )?;
+        op.param_name_prefix = prefix.to_string();
+        Ok(op)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -331,6 +334,7 @@ impl RwkvChannelMixOp {
         };
 
         Ok(Self {
+            param_name_prefix: String::new(),
             layer_norm_channel_mix_forward_fused: vulkan::ComputeKernel::new_with_access(
                 &device,
                 LAYER_NORM_CHANNEL_MIX_FORWARD_FUSED_SPV,
@@ -661,6 +665,59 @@ impl RwkvChannelMixOp {
                 decay_class: RwkvDecayClass::Decay,
             },
         ]
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Canonical names match trainables(); prefix keeps h/l cells distinct.
+        let p = crate::param_offload::prefixed_name;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "ln2.weight"),
+            &self.layer_norm_weight,
+        )?;
+        self.layer_norm_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "ln2.bias"),
+            &self.layer_norm_bias,
+        )?;
+        self.layer_norm_bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "x_k_cm"), &self.mix_k)?;
+        self.mix_k = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "key_cm.weight"),
+            &self.key_weight,
+        )?;
+        self.key_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "value_cm.weight"),
+            &self.value_weight,
+        )?;
+        self.value_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.layer_norm_weight = take(p(&self.param_name_prefix, "ln2.weight"))?;
+        self.layer_norm_bias = take(p(&self.param_name_prefix, "ln2.bias"))?;
+        self.mix_k = take(p(&self.param_name_prefix, "x_k_cm"))?;
+        self.key_weight = take(p(&self.param_name_prefix, "key_cm.weight"))?;
+        self.value_weight = take(p(&self.param_name_prefix, "value_cm.weight"))?;
+        Ok(())
     }
 
     pub(crate) fn record_forward(

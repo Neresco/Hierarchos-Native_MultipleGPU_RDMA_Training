@@ -236,6 +236,20 @@ struct RwkvCurrentGradientTrace {
 }
 
 impl RwkvTbpttSequenceOp {
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.cell.offload_params(store)
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.cell.restore_params(store)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn from_model_package(
         device: VulkanDevice,

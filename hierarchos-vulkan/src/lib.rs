@@ -15,6 +15,7 @@ mod hierarchos_ce_mask_tests;
 mod lm_execution;
 mod lora;
 mod mixed_precision;
+pub mod param_offload;
 mod projection;
 mod projection_graph;
 mod rwkv_adapter_channel_mix;
@@ -3544,6 +3545,40 @@ impl HierarchosOutNormHeadTrainer {
                 decay_class: RwkvDecayClass::Decay,
             },
         ]
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Canonical names match optimizer_trainables().
+        store.absorb(&self.device, "out_norm.weight", &self.norm_weight)?;
+        self.norm_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, "out_norm.bias", &self.norm_bias)?;
+        self.norm_bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        // NOTE: the tied `lm_head.weight` (canonical name "lm_head.weight") is
+        // deliberately NOT offloaded. It lives behind
+        // `SharedLmHeadParameter { inner: Arc<SharedLmHeadInner> }`, an immutable
+        // shared reference. Offloading it would need interior mutability on
+        // `inner.weight`, but `weight_buffer()` is consumed by the full-model
+        // optimizer registry (`parameter: &GpuBuffer`), which requires a stable
+        // reference that cannot outlive a lock guard. Making it swappable would
+        // force the registry to hold owned Arc clones, which would keep the
+        // lm_head allocation alive and negate the VRAM savings. Left on-GPU.
+        // This is the largest single parameter for vocab-heavy models; revisit
+        // with a registry that re-binds each window.
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        self.norm_weight = store.release(&self.device, "out_norm.weight")?;
+        store.forget("out_norm.weight");
+        self.norm_bias = store.release(&self.device, "out_norm.bias")?;
+        store.forget("out_norm.bias");
+        Ok(())
     }
 
     /// Finish output bookkeeping after an external full-model optimizer has

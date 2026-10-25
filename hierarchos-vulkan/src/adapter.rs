@@ -110,6 +110,7 @@ pub struct AdapterStepResult {
 /// matrix decay while the adapter bias remains in the vector/no-decay group.
 pub struct SharedTokenAdapterTrainer {
     device: VulkanDevice,
+    param_name_prefix: String,
     input_dim: usize,
     output_dim: usize,
     rank: usize,
@@ -319,6 +320,7 @@ impl SharedTokenAdapterTrainer {
         };
 
         Ok(Self {
+            param_name_prefix: String::new(),
             layer_norm_adapter_forward_fused,
             layer_norm_linear_silu_forward_fused,
             layer_norm_linear_forward_fused,
@@ -452,7 +454,7 @@ impl SharedTokenAdapterTrainer {
                 "adapter {prefix:?} shapes are inconsistent: down={down_shape:?} up={up_shape:?} bias={bias_shape:?}"
             );
         }
-        Self::new(
+        let mut op = Self::new(
             device,
             input_dim,
             output_dim,
@@ -462,7 +464,9 @@ impl SharedTokenAdapterTrainer {
             &up_weight,
             &bias,
             matrix_weight_decay,
-        )
+        )?;
+        op.param_name_prefix = prefix.to_string();
+        Ok(op)
     }
 
     /// Record the adapter forward pass into a caller-owned Vulkan command
@@ -796,6 +800,56 @@ impl SharedTokenAdapterTrainer {
                 decay_class: RwkvDecayClass::NoDecay,
             },
         ]
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Trainable parameters (canonical names match deepembed_trainables()).
+        let p = crate::param_offload::prefixed_name;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "down.weight"),
+            &self.down_weight,
+        )?;
+        self.down_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "up.weight"),
+            &self.up_weight,
+        )?;
+        self.up_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "bias"), &self.bias)?;
+        self.bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        // Non-trainable real params (fixed layer-norm scale/shift).
+        store.absorb(
+            &self.device,
+            &p(&self.param_name_prefix, "norm.weight"),
+            &self.norm_weight,
+        )?;
+        self.norm_weight = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        store.absorb(&self.device, &p(&self.param_name_prefix, "norm.bias"), &self.norm_bias)?;
+        self.norm_bias = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.down_weight = take(p(&self.param_name_prefix, "down.weight"))?;
+        self.up_weight = take(p(&self.param_name_prefix, "up.weight"))?;
+        self.bias = take(p(&self.param_name_prefix, "bias"))?;
+        self.norm_weight = take(p(&self.param_name_prefix, "norm.weight"))?;
+        self.norm_bias = take(p(&self.param_name_prefix, "norm.bias"))?;
+        Ok(())
     }
 
     fn validate_rows(&self, rows: usize) -> Result<()> {

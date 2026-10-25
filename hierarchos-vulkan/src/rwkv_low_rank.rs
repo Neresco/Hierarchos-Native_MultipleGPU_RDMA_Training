@@ -423,6 +423,7 @@ pub(crate) struct RwkvLowRankFp16ParameterMirrors {
 /// exactly like `left @ parameter`. No transpose is introduced at load time.
 pub struct RwkvLowRankOp {
     device: VulkanDevice,
+    param_name_prefix: String,
     width: usize,
     w_rank: usize,
     a_rank: usize,
@@ -747,10 +748,12 @@ impl RwkvLowRankOp {
         let (g_rank, g1) = read_first_matrix(&path, &format!("{prefix}.g1"), width)?;
         let g2 = read_second_matrix(&path, &format!("{prefix}.g2"), g_rank, width)?;
 
-        Self::new(
+        let mut op = Self::new(
             device, width, w_rank, a_rank, g_rank, max_batch, &mix_w, &mix_a, &mix_g, &w0, &w1,
             &w2, &a0, &a1, &a2, &g1, &g2,
-        )
+        )?;
+        op.param_name_prefix = prefix.to_string();
+        Ok(op)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1103,6 +1106,7 @@ impl RwkvLowRankOp {
         };
 
         Ok(Self {
+            param_name_prefix: String::new(),
             time_mix_forward: vulkan::ComputeKernel::new(
                 &device,
                 TIME_MIX_FORWARD_SPV,
@@ -3296,6 +3300,66 @@ impl RwkvLowRankOp {
                 decay_class: decay,
             },
         ]
+    }
+
+    pub(crate) fn offload_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        // Canonical names match trainables().
+        let p = crate::param_offload::prefixed_name;
+        let names: &[(&str, &GpuBuffer)] = &[
+            ("x_w", &self.mix_w),
+            ("x_a", &self.mix_a),
+            ("x_g", &self.mix_g),
+            ("w0", &self.w0),
+            ("w1", &self.w1),
+            ("w2", &self.w2),
+            ("a0", &self.a0),
+            ("a1", &self.a1),
+            ("a2", &self.a2),
+            ("g1", &self.g1),
+            ("g2", &self.g2),
+        ];
+        for (name, buffer) in names {
+            store.absorb(&self.device, &p(&self.param_name_prefix, name), buffer)?;
+        }
+        self.mix_w = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.mix_a = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.mix_g = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.w0 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.w1 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.w2 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.a0 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.a1 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.a2 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.g1 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        self.g2 = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
+        Ok(())
+    }
+
+    pub(crate) fn restore_params(
+        &mut self,
+        store: &mut crate::param_offload::ParamOffloadStore,
+    ) -> Result<()> {
+        let p = crate::param_offload::prefixed_name;
+        let mut take = |name: String| -> Result<GpuBuffer> {
+            let buffer = store.release(&self.device, &name)?;
+            store.forget(&name);
+            Ok(buffer)
+        };
+        self.mix_w = take(p(&self.param_name_prefix, "x_w"))?;
+        self.mix_a = take(p(&self.param_name_prefix, "x_a"))?;
+        self.mix_g = take(p(&self.param_name_prefix, "x_g"))?;
+        self.w0 = take(p(&self.param_name_prefix, "w0"))?;
+        self.w1 = take(p(&self.param_name_prefix, "w1"))?;
+        self.w2 = take(p(&self.param_name_prefix, "w2"))?;
+        self.a0 = take(p(&self.param_name_prefix, "a0"))?;
+        self.a1 = take(p(&self.param_name_prefix, "a1"))?;
+        self.a2 = take(p(&self.param_name_prefix, "a2"))?;
+        self.g1 = take(p(&self.param_name_prefix, "g1"))?;
+        self.g2 = take(p(&self.param_name_prefix, "g2"))?;
+        Ok(())
     }
 
     fn matmul_forward(
