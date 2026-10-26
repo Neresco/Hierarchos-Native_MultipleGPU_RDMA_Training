@@ -27000,6 +27000,84 @@ impl TrainableParameter {
         self.values.read_f32(self.len)
     }
 
+    /// Offload the persistent optimizer state (AdamW moments + gradient) to a
+    /// CPU/SSD store, dropping the GPU buffers. `values` (the weights) stays
+    /// resident because the forward/backward always need it. Safe to call
+    /// between optimizer steps.
+    fn offload_optimizer_state(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.device.clone();
+        if let Some(m) = self.exp_avg.take() {
+            store.absorb(&device, &format!("{name}.e1"), &m)?;
+        }
+        if let Some(m) = self.exp_avg_sq.take() {
+            store.absorb(&device, &format!("{name}.e2"), &m)?;
+        }
+        if let Some(g) = self.grad.take() {
+            store.absorb(&device, &format!("{name}.g"), &g)?;
+        }
+        Ok(())
+    }
+
+    /// Restore previously offloaded optimizer state from the store. No-op for
+    /// any component that was not offloaded.
+    fn restore_optimizer_state(
+        &mut self,
+        store: &dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.device.clone();
+        if store.contains(&format!("{name}.e1")) {
+            self.exp_avg = Some(store.release(&device, &format!("{name}.e1"))?);
+        }
+        if store.contains(&format!("{name}.e2")) {
+            self.exp_avg_sq = Some(store.release(&device, &format!("{name}.e2"))?);
+        }
+        if store.contains(&format!("{name}.g")) {
+            self.grad = Some(store.release(&device, &format!("{name}.g"))?);
+        }
+        Ok(())
+    }
+
+    /// Offload only the AdamW moments, leaving `values` and the gradient
+    /// resident for the forward/backward pass. Used by the chunked optimizer
+    /// so a large model can keep its moment state in CPU/SSD storage.
+    fn offload_moments(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.device.clone();
+        if let Some(m) = self.exp_avg.take() {
+            store.absorb(&device, &format!("{name}.e1"), &m)?;
+        }
+        if let Some(m) = self.exp_avg_sq.take() {
+            store.absorb(&device, &format!("{name}.e2"), &m)?;
+        }
+        Ok(())
+    }
+
+    /// Restore previously offloaded AdamW moments. No-op for components absent.
+    fn restore_moments(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.device.clone();
+        if store.contains(&format!("{name}.e1")) {
+            self.exp_avg = Some(store.release(&device, &format!("{name}.e1"))?);
+            store.forget(&format!("{name}.e1"));
+        }
+        if store.contains(&format!("{name}.e2")) {
+            self.exp_avg_sq = Some(store.release(&device, &format!("{name}.e2"))?);
+            store.forget(&format!("{name}.e2"));
+        }
+        Ok(())
+    }
+
     /// Fork a PEFT replacement parameter entirely on-device.
     ///
     /// `Clone` intentionally aliases Vulkan allocations for physically shared
@@ -27348,6 +27426,12 @@ impl VulkanLora {
 }
 
 impl VulkanLinear {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        out.push(&mut self.weight);
+        if self.train_bias && self.has_bias {
+            out.push(&mut self.bias);
+        }
+    }
     fn new(
         device: &VulkanDevice,
         input_dim: usize,
@@ -28223,6 +28307,14 @@ struct VulkanLayerNorm {
 }
 
 impl VulkanLayerNorm {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        if self.trainable {
+            out.push(&mut self.weight);
+        }
+        if self.train_bias && self.has_bias {
+            out.push(&mut self.bias);
+        }
+    }
     fn new(
         device: &VulkanDevice,
         dim: usize,
@@ -54654,6 +54746,52 @@ enum VulkanQwenGatedDeltaProjection {
     },
 }
 
+impl VulkanQwenGatedDeltaProjection {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        match self {
+            Self::Qwen3Next { qkvz, ba, .. } => {
+                qkvz.collect_trainables(out);
+                ba.collect_trainables(out);
+            }
+            Self::Qwen35 { qkv, z, b, a } => {
+                qkv.collect_trainables(out);
+                z.collect_trainables(out);
+                b.collect_trainables(out);
+                a.collect_trainables(out);
+            }
+            Self::OlmoHybrid { q, k, v, z, b, a, .. } => {
+                q.collect_trainables(out);
+                k.collect_trainables(out);
+                v.collect_trainables(out);
+                z.collect_trainables(out);
+                b.collect_trainables(out);
+                a.collect_trainables(out);
+            }
+            Self::Glm5 {
+                q, k, v, forget_a, forget_b, beta, gate_a, gate_b, ..
+            } => {
+                q.collect_trainables(out);
+                k.collect_trainables(out);
+                v.collect_trainables(out);
+                forget_a.collect_trainables(out);
+                forget_b.collect_trainables(out);
+                beta.collect_trainables(out);
+                gate_a.collect_trainables(out);
+                gate_b.collect_trainables(out);
+            }
+            Self::Kimi { q, k, v, forget_a, forget_b, beta, gate, .. } => {
+                q.collect_trainables(out);
+                k.collect_trainables(out);
+                v.collect_trainables(out);
+                forget_a.collect_trainables(out);
+                forget_b.collect_trainables(out);
+                beta.collect_trainables(out);
+                gate.collect_trainables(out);
+            }
+        }
+    }
+}
+
 struct VulkanQwenGatedDeltaNet {
     projection: VulkanQwenGatedDeltaProjection,
     hidden_size: usize,
@@ -54705,6 +54843,13 @@ struct VulkanQwenGatedDeltaNet {
 }
 
 impl VulkanQwenGatedDeltaNet {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        self.projection.collect_trainables(out);
+        out.push(&mut self.conv_weight);
+        out.push(&mut self.dt_bias);
+        out.push(&mut self.a_log);
+        out.push(&mut self.norm_weight);
+    }
     fn new(
         device: &VulkanDevice,
         rows: usize,
@@ -56948,6 +57093,50 @@ struct VulkanTransformerLayer {
 }
 
 impl VulkanTransformerLayer {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        out.push(&mut self.attention_sink);
+        if let Some(m) = self.c_attn.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.q_proj.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.k_proj.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.v_proj.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.attention_gate.as_mut() {
+            m.collect_trainables(out);
+        }
+        self.c_proj.collect_trainables(out);
+        self.c_fc.collect_trainables(out);
+        if let Some(m) = self.c_gate.as_mut() {
+            m.collect_trainables(out);
+        }
+        self.c_mlp_proj.collect_trainables(out);
+        self.ln1.collect_trainables(out);
+        self.ln2.collect_trainables(out);
+        if let Some(m) = self.post_attention_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.post_mlp_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.q_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.k_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.v_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.qwen_gated_delta.as_mut() {
+            m.collect_trainables(out);
+        }
+    }
     /// Return the exact Q/K tensors consumed by the self-attention kernel in
     /// the most recent forward pass. The forward path has several ordering
     /// variants (Q/K norm before or after RoPE, post-norm clipping, and ESM's
@@ -63679,6 +63868,14 @@ pub struct VulkanTransformer {
     encoder_rows: usize,
     encoder_hidden_size: usize,
     step: u32,
+    /// When set, the optimizer pass is run as per-chunk submissions that
+    /// restore a chunk's AdamW moments from the store, step them, sync, and
+    /// evict them again, so the full moment state never resides on the GPU.
+    chunked_offload_enabled: bool,
+    chunked_offload_store: Option<Box<dyn crate::param_offload::OffloadStore>>,
+    chunked_offload_chunk_bytes: usize,
+    /// Distributed AllReduce gradient exchanger, set for multi-node training.
+    gradient_exchanger: Option<Box<dyn GradientExchanger>>,
     dropout_seed: u32,
     layerdrop: f32,
     lora_configs: BTreeMap<String, VulkanTransformerLoraConfig>,
@@ -63780,7 +63977,239 @@ pub struct VulkanTransformer {
     grad_final_norm_input: GpuBuffer,
 }
 
+/// Exchange the flattened gradient vector with peers. In AllReduce mode this
+/// is a ring allreduce sum: every rank contributes its local gradients and all
+/// ranks end up with the summed (averaged) gradient.
+pub trait GradientExchanger {
+    fn exchange(&mut self, grads: &mut Vec<f32>) -> anyhow::Result<()>;
+}
+
 impl VulkanTransformer {
+    fn collect_trainables<'a>(&'a mut self, out: &mut Vec<&'a mut TrainableParameter>) {
+        if let Some(p) = self.position_embedding.as_mut() {
+            out.push(p);
+        }
+        if let Some(p) = self.lm_head_bias.as_mut() {
+            out.push(p);
+        }
+        if let Some(p) = self.relative_attention_bias.as_mut() {
+            out.push(p);
+        }
+        for p in self.per_layer_relative_attention_bias.iter_mut() {
+            out.push(p);
+        }
+        if let Some(m) = self.lm_head.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.embedding_project.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.output_project.as_mut() {
+            m.collect_trainables(out);
+        }
+        if let Some(m) = self.embedding_norm.as_mut() {
+            m.collect_trainables(out);
+        }
+        self.final_norm.collect_trainables(out);
+        for layer in self.layers.iter_mut() {
+            layer.collect_trainables(out);
+        }
+    }
+
+    /// Offload every trainable's persistent optimizer state (AdamW moments +
+    /// gradient) to the store. Weights (`values`) stay resident. Idempotent:
+    /// safe to call once per optimizer step.
+    pub fn offload_optimizer_state(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+    ) -> Result<()> {
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for (index, parameter) in trainables.iter_mut().enumerate() {
+            parameter.offload_optimizer_state(store, &format!("off.{index}"))?;
+        }
+        Ok(())
+    }
+
+    /// Restore previously offloaded optimizer state. No-op when the store has
+    /// no matching entries.
+    pub fn restore_optimizer_state(
+        &mut self,
+        store: &dyn crate::param_offload::OffloadStore,
+    ) -> Result<()> {
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for (index, parameter) in trainables.iter_mut().enumerate() {
+            parameter.restore_optimizer_state(store, &format!("off.{index}"))?;
+        }
+        Ok(())
+    }
+
+    /// Enable chunked optimizer-state offload. After this call the optimizer
+    /// pass of each `train_step` restores one chunk of AdamW moments to the
+    /// GPU, steps that chunk in its own submission, syncs, and evicts it, so
+    /// the full moment state lives in the store (CPU RAM or mmap'd SSD) rather
+    /// than VRAM. `values` and the gradient stay resident. Setup-allocated
+    /// moments are evicted immediately so forward/backward does not carry them.
+    ///
+    /// Not supported with LoRA/PEFT (the inline PEFT optimizer is bypassed).
+    pub fn enable_chunked_optimizer_offload(
+        &mut self,
+        store: Box<dyn crate::param_offload::OffloadStore>,
+        chunk_bytes: usize,
+    ) -> Result<()> {
+        if self.lora_config.is_some() {
+            bail!("chunked optimizer offload is not supported with LoRA/PEFT enabled");
+        }
+        self.chunked_offload_store = Some(store);
+        self.chunked_offload_chunk_bytes = chunk_bytes.max(16 * 1024 * 1024);
+        self.chunked_offload_enabled = true;
+        let mut store = self
+            .chunked_offload_store
+            .take()
+            .context("chunked offload store vanished")?;
+        self.evict_setup_moments(&mut *store)?;
+        self.chunked_offload_store = Some(store);
+        Ok(())
+    }
+
+    /// Evict any moments already allocated on the GPU to the store.
+    fn evict_setup_moments(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+    ) -> Result<()> {
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for (index, parameter) in trainables.iter_mut().enumerate() {
+            parameter.offload_moments(store, &format!("opt.{index}"))?;
+        }
+        self.shared_embedding.offload_moments(store, "opt.shared")?;
+        Ok(())
+    }
+
+    /// Run the optimizer as per-chunk submissions. Each chunk's moments are
+    /// restored, the AdamW dispatches recorded into a fresh submission, that
+    /// submission synced, then the moments evicted, so only one chunk of moment
+    /// state is ever resident on the GPU.
+    fn run_chunked_optimizer(
+        &mut self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        next_step: u32,
+        hyper: AdamWHyperParams,
+    ) -> Result<()> {
+        // Extract these before the spanning `collect_trainables` borrow below.
+        // `kernels` is read-only throughout, so a raw pointer is sound here.
+        let device = self.device.clone();
+        let kernels = &*self.kernels as *const TransformerKernels;
+        // SAFETY: `kernels` is only ever read (record_step takes a shared ref)
+        // and points into `self.kernels`, which stays valid for this call.
+        // The `trainables` borrow touches other fields, never `kernels`.
+        let kernels_read = unsafe { &*kernels };
+        let chunk_bytes = self.chunked_offload_chunk_bytes;
+        // Reuse the same mmap offsets each step (stable offload order).
+        store.reset_cursor();
+
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            let total = trainables.len();
+            let mut offset = 0usize;
+            while offset < total {
+                let mut end = offset;
+                let mut bytes = 0usize;
+                while end < total {
+                    bytes += 2 * trainables[end].len * std::mem::size_of::<f32>();
+                    end += 1;
+                    if bytes >= chunk_bytes {
+                        break;
+                    }
+                }
+                let chunk = &mut trainables[offset..end];
+                for (ci, parameter) in chunk.iter_mut().enumerate() {
+                    parameter.restore_moments(store, &format!("opt.{}", offset + ci))?;
+                }
+                let mut cmds = vulkan::ComputeBatch::new(&device)?;
+                for parameter in chunk.iter() {
+                    parameter.record_step(&mut cmds, kernels_read, next_step, hyper)?;
+                }
+                cmds.submit()?;
+                for (ci, parameter) in chunk.iter_mut().enumerate() {
+                    parameter.offload_moments(store, &format!("opt.{}", offset + ci))?;
+                }
+                offset = end;
+            }
+        }
+
+        // Tied embedding / shared lm_head as its own chunk.
+        self.shared_embedding.restore_moments(store, "opt.shared")?;
+        let mut cmds = vulkan::ComputeBatch::new(&device)?;
+        let tied_step = self.shared_embedding.record_step(&mut cmds, hyper)?;
+        if tied_step != next_step {
+            bail!(
+                "tied embedding optimizer step {tied_step} diverged from Transformer step {next_step}"
+            );
+        }
+        cmds.submit()?;
+        self.shared_embedding.offload_moments(store, "opt.shared")?;
+        Ok(())
+    }
+
+    /// Install a gradient exchanger for distributed (AllReduce) training. When
+    /// set, `train_step` reads the full gradient vector, hands it to the
+    /// exchanger (ring allreduce), and writes the result back before the
+    /// post-submit optimizer step. Requires the post-submit optimizer
+    /// (`--cpu-offload`).
+    pub fn set_gradient_exchanger(&mut self, exchanger: Box<dyn GradientExchanger>) {
+        self.gradient_exchanger = Some(exchanger);
+    }
+
+    /// Concatenate every trainable's gradient (plus the shared embedding's
+    /// gradient) into a flat vector, in `collect_trainables` order followed by
+    /// the shared embedding. The order is deterministic across ranks, so the
+    /// flat layout matches on every peer.
+    pub fn read_all_gradients(&mut self) -> Result<Vec<f32>> {
+        let mut out: Vec<f32> = Vec::new();
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            for t in trainables.iter() {
+                let grad = t.grad_buffer()?;
+                out.extend_from_slice(&grad.read_f32(t.len)?);
+            }
+        }
+        let shared_grad = self.shared_embedding.gradient_buffer()?;
+        let shared_len = self.shared_embedding.len();
+        out.extend_from_slice(&shared_grad.read_f32(shared_len)?);
+        Ok(out)
+    }
+
+    /// Write a flat gradient vector back into every trainable's gradient buffer
+    /// (plus the shared embedding), using the same deterministic order as
+    /// `read_all_gradients`.
+    pub fn write_all_gradients(&mut self, grads: &[f32]) -> Result<()> {
+        let mut cursor = 0usize;
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            for t in trainables.iter_mut() {
+                let grad = t.grad_buffer()?;
+                let slice = &grads[cursor..cursor + t.len];
+                grad.write_f32(slice)?;
+                cursor += t.len;
+            }
+        }
+        let shared_grad = self.shared_embedding.gradient_buffer()?;
+        let shared_len = self.shared_embedding.len();
+        shared_grad.write_f32(&grads[cursor..cursor + shared_len])?;
+        anyhow::ensure!(
+            cursor + shared_len == grads.len(),
+            "flat gradient length {} does not match trainable total {}",
+            grads.len(),
+            cursor + shared_len
+        );
+        Ok(())
+    }
+
     /// Return the nearest preceding full DSA indexer's routing mask for a GLM
     /// shared-indexer layer. DeepSeek-V3.2 layers all own their indexer, so
     /// they never enter this path.
@@ -65903,6 +66332,10 @@ impl VulkanTransformer {
         }
         let kernels = Box::new(TransformerKernels::new(&device)?);
         Ok(Self {
+            chunked_offload_enabled: false,
+            chunked_offload_store: None,
+            chunked_offload_chunk_bytes: 0,
+            gradient_exchanger: None,
             token_ids: GpuBuffer::zeros_u32(&device, rows)?,
             token_type_ids: GpuBuffer::zeros_u32(&device, rows)?,
             auxiliary_ids: GpuBuffer::zeros_u32(&device, rows)?,
@@ -82292,6 +82725,7 @@ impl VulkanTransformer {
                         token_embedding_grad,
                     )?;
             }
+        if !self.chunked_offload_enabled {
             if !peft_mode {
                 if let Some(position_embedding) = self
                     .position_embedding
@@ -82352,6 +82786,7 @@ impl VulkanTransformer {
                     )?;
                 }
             }
+        }
         } else if peft_bias_all
             && matches!(
                 self.config.architecture,
@@ -82443,6 +82878,7 @@ impl VulkanTransformer {
                 embedding_project.record_step(&mut commands, &self.kernels, next_step, hyper)?;
             }
         }
+        if !self.chunked_offload_enabled {
         for (layer, active) in self.layers.iter().zip(&active_layers) {
             if *active {
                 layer.record_step(&mut commands, &self.kernels, next_step, hyper)?;
@@ -82525,6 +82961,7 @@ impl VulkanTransformer {
                 );
             }
         }
+        }
         self.loss_sum_reducer
             .record_sum(&mut commands, &self.row_loss, self.rows)?;
         commands.submit()?;
@@ -82535,6 +82972,26 @@ impl VulkanTransformer {
         }
         self.step = next_step;
         let loss = self.loss_sum_reducer.read_sum()?;
+        if self.gradient_exchanger.is_some() {
+            // Distributed AllReduce: sum local gradients with peers, then step
+            // on the reduced gradient. This must run before the optimizer.
+            let mut exchanger = self
+                .gradient_exchanger
+                .take()
+                .context("gradient exchanger vanished")?;
+            let mut grads = self.read_all_gradients()?;
+            exchanger.exchange(&mut grads)?;
+            self.write_all_gradients(&grads)?;
+            self.gradient_exchanger = Some(exchanger);
+        }
+        if self.chunked_offload_enabled {
+            let mut store = self
+                .chunked_offload_store
+                .take()
+                .context("chunked offload store is missing")?;
+            self.run_chunked_optimizer(&mut *store, next_step, hyper)?;
+            self.chunked_offload_store = Some(store);
+        }
         Ok(VulkanTransformerStepResult {
             loss,
             step: self.step,

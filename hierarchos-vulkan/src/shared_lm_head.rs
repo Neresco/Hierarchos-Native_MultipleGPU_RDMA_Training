@@ -66,8 +66,8 @@ struct SharedLmHeadInner {
 #[derive(Clone)]
 struct SharedLmHeadTrainingState {
     accumulated_grad: GpuBuffer,
-    exp_avg: GpuBuffer,
-    exp_avg_sq: GpuBuffer,
+    exp_avg: Option<GpuBuffer>,
+    exp_avg_sq: Option<GpuBuffer>,
 }
 
 struct SharedLmHeadExecutionMirror {
@@ -133,8 +133,8 @@ impl SharedLmHeadParameter {
         let training_state = if trainable {
             Some(SharedLmHeadTrainingState {
                 accumulated_grad: GpuBuffer::zeros_f32(&device, len)?,
-                exp_avg: GpuBuffer::zeros_f32(&device, len)?,
-                exp_avg_sq: GpuBuffer::zeros_f32(&device, len)?,
+                exp_avg: Some(GpuBuffer::zeros_f32(&device, len)?),
+                exp_avg_sq: Some(GpuBuffer::zeros_f32(&device, len)?),
             })
         } else {
             None
@@ -327,9 +327,61 @@ impl SharedLmHeadParameter {
             .unwrap_or(0))
     }
 
+    /// Offload the AdamW moments, keeping the gradient accumulator resident.
+    /// No-op when training state is absent or the moments are already offloaded.
+    pub(crate) fn offload_moments(
+        &self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.inner.device.clone();
+        let mut lock = self
+            .inner
+            .training_state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("shared lm_head training-state lock poisoned"))?;
+        if let Some(state) = lock.as_mut() {
+            if let Some(m) = state.exp_avg.take() {
+                store.absorb(&device, &format!("{name}.e1"), &m)?;
+            }
+            if let Some(m) = state.exp_avg_sq.take() {
+                store.absorb(&device, &format!("{name}.e2"), &m)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Restore previously offloaded AdamW moments. No-op for components absent.
+    pub(crate) fn restore_moments(
+        &self,
+        store: &mut dyn crate::param_offload::OffloadStore,
+        name: &str,
+    ) -> Result<()> {
+        let device = self.inner.device.clone();
+        let mut lock = self
+            .inner
+            .training_state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("shared lm_head training-state lock poisoned"))?;
+        if let Some(state) = lock.as_mut() {
+            if store.contains(&format!("{name}.e1")) {
+                state.exp_avg = Some(store.release(&device, &format!("{name}.e1"))?);
+                store.forget(&format!("{name}.e1"));
+            }
+            if store.contains(&format!("{name}.e2")) {
+                state.exp_avg_sq = Some(store.release(&device, &format!("{name}.e2"))?);
+                store.forget(&format!("{name}.e2"));
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn peft_optimizer_buffers(&self) -> Result<(GpuBuffer, GpuBuffer)> {
         let state = self.training_state()?;
-        Ok((state.exp_avg, state.exp_avg_sq))
+        Ok((
+            state.exp_avg.context("shared lm_head first moment is not allocated")?,
+            state.exp_avg_sq.context("shared lm_head second moment is not allocated")?,
+        ))
     }
 
     pub(crate) fn restore_peft_optimizer_step(&self, step: u32) {
@@ -391,8 +443,8 @@ impl SharedLmHeadParameter {
             &[
                 &self.inner.weight,
                 &state.accumulated_grad,
-                &state.exp_avg,
-                &state.exp_avg_sq,
+                state.exp_avg.as_ref().context("shared lm_head first moment is not allocated")?,
+                state.exp_avg_sq.as_ref().context("shared lm_head second moment is not allocated")?,
             ],
             bytemuck::bytes_of(&push),
             [div_ceil_u32(self.len(), 256), 1, 1],
@@ -463,8 +515,8 @@ impl SharedLmHeadParameter {
                 &[
                     &self.inner.weight,
                     &state.accumulated_grad,
-                    &state.exp_avg,
-                    &state.exp_avg_sq,
+                    state.exp_avg.as_ref().context("shared lm_head first moment is not allocated")?,
+                    state.exp_avg_sq.as_ref().context("shared lm_head second moment is not allocated")?,
                 ],
                 bytemuck::bytes_of(&push),
                 [div_ceil_u32(self.inner.context_dim, 256), 1, 1],
@@ -582,7 +634,7 @@ impl SharedLmHeadParameter {
         self.inner.readback.read_f32(self.len())
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.inner.context_dim * self.inner.vocab_size
     }
 }

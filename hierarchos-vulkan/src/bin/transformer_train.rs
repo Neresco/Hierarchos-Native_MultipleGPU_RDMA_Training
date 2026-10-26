@@ -15,6 +15,33 @@ use serde::Serialize;
 use serde_json::Value;
 use tokenizers::Tokenizer;
 
+/// Distributed AllReduce gradient exchanger backed by the RDMA ring transport.
+/// Every rank contributes its local flat gradient; `ring_allreduce_sum` leaves
+/// each rank with the summed (world-normalized) gradient.
+struct RingExchanger {
+    ring: hierarchos_vulkan::distributed::RingTransport,
+    rank: usize,
+    world_size: usize,
+}
+
+impl hierarchos_vulkan::GradientExchanger for RingExchanger {
+    fn exchange(&mut self, grads: &mut Vec<f32>) -> anyhow::Result<()> {
+        hierarchos_vulkan::distributed::ring_allreduce_sum(
+            &mut self.ring,
+            self.rank,
+            self.world_size,
+            grads,
+        )?;
+        // `ring_allreduce_sum` sums across ranks; average so a data-parallel
+        // step matches single-device training on the concatenated dataset.
+        let inv = 1.0 / self.world_size as f32;
+        for g in grads.iter_mut() {
+            *g *= inv;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct Args {
     model: Option<PathBuf>,
@@ -36,6 +63,15 @@ struct Args {
     eps: f32,
     weight_decay: f32,
     device_index: Option<usize>,
+    cpu_offload: bool,
+    /// Optional (path, capacity_bytes) for SSD-backed mmap offload. When set,
+    /// the offloaded optimizer state spills to this file via the OS page cache.
+    offload_ssd_path: Option<PathBuf>,
+    offload_ssd_capacity: Option<usize>,
+    rank: usize,
+    world_size: usize,
+    peer_ips: Vec<String>,
+    rdma_device: Option<String>,
     seed: u64,
     log_steps: usize,
     pad_token_id: Option<u32>,
@@ -120,6 +156,13 @@ Training options:\n\
   --eps F                       AdamW epsilon (default: 1e-8)\n\
   --weight-decay F              AdamW weight decay (default: 0.0)\n\
   --device-index N              Vulkan physical-device index\n\
+  --cpu-offload                 Offload optimizer state (moments+grad) to CPU RAM
+                                between steps; weights stay on GPU\n\
+  --offload-ssd <path>          SSD-backed mmap offload store (implies --cpu-offload);\n\
+                                requires --offload-ssd-capacity-bytes <bytes>\n\
+  --rank N --world-size N       Distributed AllReduce training (requires --cpu-offload)\n\
+  --peer-ips IP1,IP2,...        One IP per rank (world-size N)\n\
+  --rdma-device NAME            RDMA device (e.g. rocep7s0); required for world-size > 1\n\\
   --log-steps N                 Emit progress JSON every N updates (default: 10)\n\
   --seed N                      LoRA initialization + Transformer dropout seed (default: 42)\n\n\
 PEFT options:\n\
@@ -161,6 +204,13 @@ fn parse_args() -> Result<Args> {
         eps: 1.0e-8,
         weight_decay: 0.0,
         device_index: None,
+        cpu_offload: false,
+        offload_ssd_path: None,
+        offload_ssd_capacity: None,
+        rank: 0,
+        world_size: 1,
+        peer_ips: Vec::new(),
+        rdma_device: None,
         seed: 42,
         log_steps: 10,
         pad_token_id: None,
@@ -252,6 +302,45 @@ fn parse_args() -> Result<Args> {
                     required_arg(&mut args, "--device-index")?,
                     "--device-index",
                 )?)
+            }
+            "--cpu-offload" => {
+                parsed.cpu_offload = true;
+            }
+            "--offload-ssd" => {
+                let path = required_arg(&mut args, "--offload-ssd")?;
+                parsed.offload_ssd_path = Some(PathBuf::from(path));
+                parsed.cpu_offload = true;
+            }
+            "--offload-ssd-capacity-bytes" => {
+                let capacity = parse_num(
+                    required_arg(&mut args, "--offload-ssd-capacity-bytes")?,
+                    "--offload-ssd-capacity-bytes",
+                )?;
+                parsed.offload_ssd_capacity = Some(capacity);
+            }
+            "--rank" => {
+                parsed.rank = parse_num(required_arg(&mut args, "--rank")?, "--rank")?;
+            }
+            "--world-size" => {
+                parsed.world_size =
+                    parse_num(required_arg(&mut args, "--world-size")?, "--world-size")?;
+            }
+            "--peer-ips" => {
+                let ips = required_arg(&mut args, "--peer-ips")?
+                    .to_string_lossy()
+                    .into_owned();
+                parsed.peer_ips = ips
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "--rdma-device" => {
+                parsed.rdma_device = Some(
+                    required_arg(&mut args, "--rdma-device")?
+                        .to_string_lossy()
+                        .into_owned(),
+                );
             }
             "--seed" => parsed.seed = parse_num(required_arg(&mut args, "--seed")?, "--seed")?,
             "--log-steps" => {
@@ -1053,6 +1142,86 @@ fn main() -> Result<()> {
     let mut optimizer_steps = 0usize;
     let mut supervised_tokens = 0usize;
     let mut final_loss = None;
+    let mut offload_store: Option<Box<dyn hierarchos_vulkan::param_offload::OffloadStore>> =
+        if args.cpu_offload {
+            let store: Box<dyn hierarchos_vulkan::param_offload::OffloadStore> =
+                match (&args.offload_ssd_path, args.offload_ssd_capacity) {
+                    (Some(path), Some(capacity)) => {
+                        let mmap =
+                            hierarchos_vulkan::param_offload::MmapOffloadStore::new(path, capacity)?;
+                        println!(
+                            "cpu_offload enabled: SSD-backed mmap store {} ({} bytes capacity)",
+                            path.display(),
+                            capacity
+                        );
+                        Box::new(mmap)
+                    }
+                    (Some(_), None) => {
+                        bail!("--offload-ssd requires --offload-ssd-capacity-bytes <bytes>")
+                    }
+                    (None, _) => {
+                        println!("cpu_offload enabled: heap store (CPU RAM)");
+                        Box::new(hierarchos_vulkan::param_offload::ParamOffloadStore::new())
+                    }
+                };
+            Some(store)
+        } else {
+            None
+        };
+    // Enable the chunked (per-chunk synced) optimizer-state offload. The
+    // optimizer pass inside train_step then restores/stepts/evicts moments one
+    // chunk at a time, so the full moment state never resides on the GPU.
+    if let Some(store) = offload_store.take() {
+        const CHUNK_BYTES: usize = 1024 * 1024 * 1024; // 1 GiB of moments per chunk
+        graph.enable_chunked_optimizer_offload(store, CHUNK_BYTES)?;
+    }
+    // Distributed AllReduce: connect the RDMA ring and install the gradient
+    // exchanger. Requires the post-submit optimizer (`--cpu-offload`) so the
+    // optimizer runs after the gradient exchange.
+    if args.world_size > 1 {
+        anyhow::ensure!(
+            args.rank < args.world_size,
+            "--rank must be smaller than --world-size"
+        );
+        anyhow::ensure!(
+            args.peer_ips.len() == args.world_size,
+            "--peer-ips must list exactly one IP per rank ({} expected for world-size {})",
+            args.world_size,
+            args.world_size
+        );
+        let rdma_device = args
+            .rdma_device
+            .as_deref()
+            .context("--rdma-device is required when --world-size > 1")?;
+        anyhow::ensure!(
+            args.cpu_offload,
+            "distributed training requires --cpu-offload (post-submit optimizer)"
+        );
+        eprintln!(
+            "distributed_training rank={} world_size={} peer_ips={:?} rdma_device={rdma_device}",
+            args.rank,
+            args.world_size,
+            args.peer_ips
+        );
+        const RING_PORT_BASE: u16 = 18730;
+        const GRAD_CHUNK_VALUES: usize = 262144;
+        const RING_ALLREDUCE_COUNT: usize = 256;
+        let ring = hierarchos_vulkan::distributed::RingTransport::connect(
+            rdma_device,
+            args.rank,
+            args.world_size,
+            RING_PORT_BASE,
+            &args.peer_ips,
+            GRAD_CHUNK_VALUES,
+            RING_ALLREDUCE_COUNT,
+        )?;
+        let exchanger = Box::new(RingExchanger {
+            ring,
+            rank: args.rank,
+            world_size: args.world_size,
+        });
+        graph.set_gradient_exchanger(exchanger);
+    }
     'epochs: for epoch in 0..args.epochs {
         for batch_index in 0..batches_per_epoch {
             if args.max_steps.is_some_and(|limit| optimizer_steps >= limit) {

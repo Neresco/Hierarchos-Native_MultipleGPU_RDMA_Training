@@ -114,6 +114,64 @@ impl ParamOffloadStore {
     }
 }
 
+/// Common interface over the heap and mmap offload stores, so callers can
+/// offload/restore without caring about the backing medium.
+pub trait OffloadStore {
+    /// Absorb a live GPU buffer under `name`; returns the bytes stored.
+    fn absorb(&mut self, device: &VulkanDevice, name: &str, buffer: &GpuBuffer) -> Result<usize>;
+    /// Reallocate a GPU buffer from the absorbed `name`; returns the fresh buffer.
+    fn release(&self, device: &VulkanDevice, name: &str) -> Result<GpuBuffer>;
+    /// Whether `name` is currently offloaded.
+    fn contains(&self, name: &str) -> bool;
+    /// Total offloaded bytes.
+    fn offloaded_bytes(&self) -> usize;
+    /// Remove the entry under `name` (used after a restore, so a later
+    /// re-offload does not collide with the still-present released copy).
+    fn forget(&mut self, name: &str);
+    /// Reset the backing cursor so a stable offload order reuses the same
+    /// offsets each cycle. Default no-op (heap stores grow/shrink freely).
+    fn reset_cursor(&mut self) {}
+}
+
+impl OffloadStore for ParamOffloadStore {
+    fn absorb(&mut self, device: &VulkanDevice, name: &str, buffer: &GpuBuffer) -> Result<usize> {
+        ParamOffloadStore::absorb(self, device, name, buffer)
+    }
+    fn release(&self, device: &VulkanDevice, name: &str) -> Result<GpuBuffer> {
+        ParamOffloadStore::release(self, device, name)
+    }
+    fn contains(&self, name: &str) -> bool {
+        ParamOffloadStore::contains(self, name)
+    }
+    fn offloaded_bytes(&self) -> usize {
+        ParamOffloadStore::offloaded_bytes(self)
+    }
+    fn forget(&mut self, name: &str) {
+        ParamOffloadStore::forget(self, name);
+    }
+}
+
+impl OffloadStore for MmapOffloadStore {
+    fn absorb(&mut self, device: &VulkanDevice, name: &str, buffer: &GpuBuffer) -> Result<usize> {
+        MmapOffloadStore::absorb(self, device, name, buffer)
+    }
+    fn release(&self, device: &VulkanDevice, name: &str) -> Result<GpuBuffer> {
+        MmapOffloadStore::release(self, device, name)
+    }
+    fn contains(&self, name: &str) -> bool {
+        MmapOffloadStore::contains(self, name)
+    }
+    fn offloaded_bytes(&self) -> usize {
+        MmapOffloadStore::offloaded_bytes(self)
+    }
+    fn forget(&mut self, name: &str) {
+        MmapOffloadStore::forget(self, name);
+    }
+    fn reset_cursor(&mut self) {
+        MmapOffloadStore::reset_cursor(self);
+    }
+}
+
 /// A `ParamOffloadStore` whose CPU backing is a memory-mapped file instead of a
 /// heap `Vec`. The OS page cache balances RAM against SSD automatically:
 /// tensors written recently stay resident in RAM, and cold tensors are paged
@@ -240,6 +298,13 @@ impl MmapOffloadStore {
 
     pub fn param_count(&self) -> usize {
         self.tensors.len()
+    }
+
+    /// Reset the write cursor to the start of the mapping. Because the
+    /// chunked optimizer offloads in a stable order, each cycle re-lays-out
+    /// every tensor at the same offset, overwriting the previous cycle's data.
+    pub fn reset_cursor(&mut self) {
+        self.next_offset = 0;
     }
 
     /// Forget a tensor's entry. Bytes are not reclaimed from the mapping; the

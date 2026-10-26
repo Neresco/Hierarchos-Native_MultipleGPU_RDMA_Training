@@ -165,7 +165,7 @@ pub use token_frontend::{
 pub use training_numerics::VulkanGradientNonfiniteDetector;
 pub use transformer::{
     PeftCapability, PeftModuleClass,
-    VulkanSeq2SeqTransformer, VulkanTransformer, VulkanTransformerArchitecture,
+    GradientExchanger, VulkanSeq2SeqTransformer, VulkanTransformer, VulkanTransformerArchitecture,
     VulkanTransformerConfig, VulkanTransformerGenerationAttention,
     VulkanTransformerGenerationConfig, VulkanTransformerGenerationHiddenState,
     VulkanTransformerGenerationMode, VulkanTransformerGenerationOutput,
