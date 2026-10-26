@@ -1144,8 +1144,36 @@ fn main() -> Result<()> {
     let mut final_loss = None;
     let mut offload_store: Option<Box<dyn hierarchos_vulkan::param_offload::OffloadStore>> =
         if args.cpu_offload {
+            // In distributed mode every rank must use its own SSD mmap file, or
+            // they would corrupt each other's optimizer state on a shared path.
+            let effective_ssd_path: Option<PathBuf> = match &args.offload_ssd_path {
+                Some(path) if args.world_size > 1 => {
+                    let ext = path
+                        .extension()
+                        .map(|e| format!(".{}", e.to_string_lossy()))
+                        .unwrap_or_default();
+                    let stem = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string());
+                    let parent = path.parent().map(|p| p.display().to_string());
+                    let name = format!("{}-rank{}{}", stem, args.rank, ext);
+                    let rank_path = match parent {
+                        Some(dir) => PathBuf::from(dir).join(name),
+                        None => PathBuf::from(name),
+                    };
+                    eprintln!(
+                        "distributed offload: rank {rank} uses dedicated SSD file {p2} (from {orig})",
+                        rank = args.rank,
+                        p2 = rank_path.display(),
+                        orig = path.display()
+                    );
+                    Some(rank_path)
+                }
+                other => other.clone(),
+            };
             let store: Box<dyn hierarchos_vulkan::param_offload::OffloadStore> =
-                match (&args.offload_ssd_path, args.offload_ssd_capacity) {
+                match (&effective_ssd_path, args.offload_ssd_capacity) {
                     (Some(path), Some(capacity)) => {
                         let mmap =
                             hierarchos_vulkan::param_offload::MmapOffloadStore::new(path, capacity)?;
