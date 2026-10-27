@@ -1,0 +1,5 @@
+# runtime artifacts
+*.log
+__pycache__/
+*.pyc
+server.py.bak-*

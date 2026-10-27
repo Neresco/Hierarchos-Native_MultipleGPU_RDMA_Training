@@ -1,0 +1,8 @@
+[
+  {"key": "pc1-gpu0", "name": "PC1 · GPU0 9060XT", "ip": "192.168.100.101", "remote": "lunarbuntu@192.168.1.101", "role": "rank0", "dev_index": 0, "rdma_device": "rocep7s0", "rank": 0},
+  {"key": "pc1-gpu1", "name": "PC1 · GPU1 9060XT", "ip": "192.168.100.101", "remote": "lunarbuntu@192.168.1.101", "role": "rank1", "dev_index": 1, "rdma_device": "rocep7s0", "rank": 1},
+  {"key": "pc1-gpu2", "name": "PC1 · GPU2 9060XT", "ip": "192.168.100.101", "remote": "lunarbuntu@192.168.1.101", "role": "rank2", "dev_index": 2, "rdma_device": "rocep7s0", "rank": 2},
+  {"key": "pc1-gpu3", "name": "PC1 · GPU3 9060XT", "ip": "192.168.100.101", "remote": "lunarbuntu@192.168.1.101", "role": "rank3", "dev_index": 3, "rdma_device": "rocep7s0", "rank": 3},
+  {"key": "pc2-gpu0", "name": "PC2 · GPU0 7600XT", "ip": "192.168.100.20", "remote": null, "role": "rank4", "dev_index": 0, "rdma_device": "rocep198s0", "rank": 4},
+  {"key": "pc2-gpu1", "name": "PC2 · GPU1 8060S iGPU", "ip": "192.168.100.20", "remote": null, "role": "rank5", "dev_index": 1, "rdma_device": "rocep198s0", "rank": 5}
+]
