@@ -66,6 +66,7 @@ The current source-derived Transformer registry contains **146 canonical native 
 | [`hierarchos-native-cli`](hierarchos-native-cli/) | Unified native CLI for Transformer training/fine-tuning/generation and Hierarchos training/fine-tuning/chat. Also handles Rust-native Hugging Face model/tokenizer/dataset acquisition. |
 | [`hierarchos-inference`](hierarchos-inference/) | Pure-Rust Hierarchos coherent-v9 inference runtime using SafeTensors model packages. |
 | [`hierarchos-gui`](hierarchos-gui/) | Native desktop frontend over the same CLI/runtime contracts. It does not contain a second model implementation. |
+| [`hierarchos-dashboard`](hierarchos-dashboard/) | Dependency-free Python browser UI for monitoring and launching distributed training across the cluster (variant selector, per-node GPU/RDMA registration, CPU/SSD offload). |
 
 The native Transformer path is not a PyTorch device plugin and does not register itself as a Python `transformers` backend. Its public integration surface is Rust plus the native CLI.
 
