@@ -6374,6 +6374,9 @@ fn run_distributed_epochs(
     }
 
     if is_primary {
+        // Restore offloaded (1-element-stub) parameters before the checkpoint
+        // export reads them, otherwise the export hits the stubbed capacity.
+        graph.maybe_restore_offloaded()?;
         let previous_context = vec![0.0f32; context_len];
         let target_context = vec![0.0f32; context_len];
         graph
