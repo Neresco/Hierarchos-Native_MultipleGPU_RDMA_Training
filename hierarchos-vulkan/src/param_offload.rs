@@ -131,6 +131,10 @@ pub trait OffloadStore {
     /// Reset the backing cursor so a stable offload order reuses the same
     /// offsets each cycle. Default no-op (heap stores grow/shrink freely).
     fn reset_cursor(&mut self) {}
+    /// Whether any parameters are currently offloaded.
+    fn is_empty(&self) -> bool;
+    /// Number of parameters currently offloaded.
+    fn param_count(&self) -> usize;
 }
 
 impl OffloadStore for ParamOffloadStore {
@@ -148,6 +152,12 @@ impl OffloadStore for ParamOffloadStore {
     }
     fn forget(&mut self, name: &str) {
         ParamOffloadStore::forget(self, name);
+    }
+    fn is_empty(&self) -> bool {
+        ParamOffloadStore::is_empty(self)
+    }
+    fn param_count(&self) -> usize {
+        ParamOffloadStore::param_count(self)
     }
 }
 
@@ -169,6 +179,12 @@ impl OffloadStore for MmapOffloadStore {
     }
     fn reset_cursor(&mut self) {
         MmapOffloadStore::reset_cursor(self);
+    }
+    fn is_empty(&self) -> bool {
+        MmapOffloadStore::is_empty(self)
+    }
+    fn param_count(&self) -> usize {
+        MmapOffloadStore::param_count(self)
     }
 }
 
@@ -193,6 +209,11 @@ pub struct MmapOffloadStore {
     /// name -> (offset_bytes, len_bytes)
     tensors: HashMap<String, (usize, usize)>,
 }
+
+// The store owns its backing `File` and the raw mmap pointer; both live for the
+// store's whole lifetime and are cleaned up in `Drop`, so moving the store
+// between threads is sound.
+unsafe impl Send for MmapOffloadStore {}
 
 // The store owns a raw mmap pointer and a `File`; both are cleaned up in `Drop`.
 // It is single-owner (not `Sync`), matching the offload cycle usage.

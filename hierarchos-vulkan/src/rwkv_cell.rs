@@ -928,7 +928,7 @@ impl RwkvCellSliceOp {
 
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         // Own parameters (canonical names match trainables()).
         let p = crate::param_offload::prefixed_name;
@@ -945,7 +945,7 @@ impl RwkvCellSliceOp {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         let p = crate::param_offload::prefixed_name;
         let mut take = |name: String| -> Result<GpuBuffer> {
@@ -1001,14 +1001,14 @@ pub struct RwkvPackedCellOp {
 impl RwkvPackedCellOp {
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.cell.offload_params(store)
     }
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.cell.restore_params(store)
     }

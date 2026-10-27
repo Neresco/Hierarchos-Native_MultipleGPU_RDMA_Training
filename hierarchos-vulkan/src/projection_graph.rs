@@ -582,7 +582,7 @@ impl GraphProjectionOp {
 
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         // Weight is always present; bias is optional (guard mirrors trainables()).
         store.absorb(&self.device, &self.weight_name, &self.weight)?;
@@ -596,7 +596,7 @@ impl GraphProjectionOp {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.weight = store.release(&self.device, &self.weight_name)?;
         store.forget(&self.weight_name);
@@ -743,7 +743,7 @@ pub(crate) struct ManagerWorkerProjectionGraph {
 impl ManagerWorkerProjectionGraph {
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.l_feedback_proj.offload_params(store)?;
         self.h_to_context.offload_params(store)?;
@@ -756,7 +756,7 @@ impl ManagerWorkerProjectionGraph {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.l_feedback_proj.restore_params(store)?;
         self.h_to_context.restore_params(store)?;

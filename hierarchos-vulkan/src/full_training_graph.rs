@@ -8030,7 +8030,7 @@ pub struct HierarchosTrainingGraph {
     pending_dynamic_loss_scale_observation: Option<HierarchosLossScaleStepDecision>,
     /// Optional CPU parameter store. When `Some`, model parameters are swapped
     /// to host memory between optimizer windows to free device VRAM.
-    cpu_offload_store: Option<crate::param_offload::ParamOffloadStore>,
+    cpu_offload_store: Option<Box<dyn crate::param_offload::OffloadStore + Send>>,
     pending_dynamic_loss_scale_observation_wait: Option<vulkan::SubmissionTimelineWait>,
     val_proj_active_in_window: bool,
     ltm_alignment_pytorch_tbptt_weighting_in_window: Option<bool>,
@@ -8144,7 +8144,7 @@ impl HierarchosTrainingGraph {
     /// next token tape is recorded.
     pub fn offload_model_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.h_recurrent.offload_params(store)?;
         self.l_recurrent.offload_params(store)?;
@@ -8160,7 +8160,7 @@ impl HierarchosTrainingGraph {
     /// store, restoring the model to its pre-offload state.
     pub fn restore_model_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.h_recurrent.restore_params(store)?;
         self.l_recurrent.restore_params(store)?;
@@ -8177,7 +8177,20 @@ impl HierarchosTrainingGraph {
     /// [`Self::maybe_restore_offloaded`] will bring them back before the next
     /// token tape is recorded.
     pub fn enable_cpu_offload(&mut self) {
-        self.cpu_offload_store.get_or_insert_with(crate::param_offload::ParamOffloadStore::new);
+        self.cpu_offload_store
+            .get_or_insert_with(| | Box::new(crate::param_offload::ParamOffloadStore::new()));
+    }
+
+    /// Enable CPU parameter offload using a caller-supplied store, e.g. an
+    /// SSD-backed `mmaap` offload store. Subsequent calls to
+    /// [`Self::maybe_offload`] will move parameters to the store and
+    /// [`Self::maybe_restore_offloaded`] will bring them back before the next
+    /// token tape is recorded.
+    pub fn enable_cpu_offload_with_store(
+        &mut self,
+        store: Box<dyn crate::param_offload::OffloadStore + Send>,
+    ) {
+        self.cpu_offload_store = Some(store);
     }
 
     /// True when CPU parameter offload is enabled for this graph.
@@ -8192,7 +8205,7 @@ impl HierarchosTrainingGraph {
             return Ok(());
         };
         if !store.is_empty() {
-            let result = self.restore_model_params(&mut store);
+            let result = self.restore_model_params(&mut *store);
             self.cpu_offload_store = Some(store);
             return result;
         }
@@ -8206,7 +8219,7 @@ impl HierarchosTrainingGraph {
         let Some(mut store) = self.cpu_offload_store.take() else {
             return Ok(());
         };
-        let result = self.offload_model_params(&mut store);
+        let result = self.offload_model_params(&mut *store);
         self.cpu_offload_store = Some(store);
         result
     }

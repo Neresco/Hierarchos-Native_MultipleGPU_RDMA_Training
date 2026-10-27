@@ -238,14 +238,14 @@ struct RwkvCurrentGradientTrace {
 impl RwkvTbpttSequenceOp {
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.cell.offload_params(store)
     }
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.cell.restore_params(store)
     }

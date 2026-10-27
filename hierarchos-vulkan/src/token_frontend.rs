@@ -722,7 +722,7 @@ pub struct HierarchosTokenFrontendOp {
 impl HierarchosTokenFrontendOp {
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         store.absorb(&self.device, "persistent", &self.persistent)?;
         self.persistent = crate::vulkan::GpuBuffer::zeros_f32(&self.device, 1)?;
@@ -745,7 +745,7 @@ impl HierarchosTokenFrontendOp {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         let mut take = |name: &str| -> Result<crate::vulkan::GpuBuffer> {
             let buffer = store.release(&self.device, name)?;

@@ -3549,7 +3549,7 @@ impl HierarchosOutNormHeadTrainer {
 
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         // Canonical names match optimizer_trainables().
         store.absorb(&self.device, "out_norm.weight", &self.norm_weight)?;
@@ -3572,7 +3572,7 @@ impl HierarchosOutNormHeadTrainer {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         self.norm_weight = store.release(&self.device, "out_norm.weight")?;
         store.forget("out_norm.weight");

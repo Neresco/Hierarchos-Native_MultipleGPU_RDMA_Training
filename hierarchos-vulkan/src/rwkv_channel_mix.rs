@@ -669,7 +669,7 @@ impl RwkvChannelMixOp {
 
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         // Canonical names match trainables(); prefix keeps h/l cells distinct.
         let p = crate::param_offload::prefixed_name;
@@ -704,7 +704,7 @@ impl RwkvChannelMixOp {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         let p = crate::param_offload::prefixed_name;
         let mut take = |name: String| -> Result<GpuBuffer> {

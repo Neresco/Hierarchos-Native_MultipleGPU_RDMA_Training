@@ -185,6 +185,10 @@ struct Args {
     distributed_mode: String,
     json_events: bool,
     cpu_offload: bool,
+    /// Optional (path, capacity_bytes) for SSD-backed mmap offload. When set,
+    /// the offloaded optimizer state spills to this file via the OS page cache.
+    offload_ssd_path: Option<PathBuf>,
+    offload_ssd_capacity: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -432,6 +436,8 @@ fn parse_args() -> Result<Args> {
     let mut distributed_mode = "param-server".to_string();
     let mut json_events = false;
     let mut cpu_offload = false;
+    let mut offload_ssd_path: Option<PathBuf> = None;
+    let mut offload_ssd_capacity: Option<usize> = None;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -628,6 +634,16 @@ fn parse_args() -> Result<Args> {
             "--no-shuffle" => shuffle = false,
             "--json-events" => json_events = true,
             "--cpu-offload" => cpu_offload = true,
+            "--offload-ssd" => {
+                offload_ssd_path = Some(PathBuf::from(required_value(&mut args, "--offload-ssd")?));
+                cpu_offload = true;
+            }
+            "--offload-ssd-capacity-bytes" => {
+                offload_ssd_capacity =
+                    Some(parse_value(required_value(&mut args, "--offload-ssd-capacity-bytes")?,
+                        "--offload-ssd-capacity-bytes")?);
+                cpu_offload = true;
+            }
             "--help" | "-h" => {
                 println!(
                     "hierarchos-vulkan-train (--model MODEL_DIR | --resume-from-ckpt PACKAGE_DIR) --dataset TOKENS.jsonl|TOKEN_CACHE_DIR --output OUTPUT_DIR \
@@ -676,10 +692,12 @@ fn parse_args() -> Result<Args> {
                      --save-steps writes exact-resume Vulkan packages under OUTPUT/checkpoint-epoch-E-step-S. \
                      Persisted mid-epoch checkpoints include the PyTorch-compatible H/L/context/LTM/ROSA carrier.\n\
                      --json-events emits single-line HIERARCHOS_EVENT JSON records on stderr for native GUI supervision.\n\
-                     --cpu-offload (single-device only) copies recurrent/projection/out-norm parameters to host \
+                     --cpu-offload copies recurrent/projection/out-norm parameters to host \
                      memory after each optimizer window and back before the next, freeing their VRAM for larger models. \
                      The tied lm_head stays on-GPU (it is reference-bound by the shared optimizer registry). Add \
-                     per-window offload/restore overhead; use with --gradient-accumulation-steps to amortize it."
+                     per-window offload/restore overhead; use with --gradient-accumulation-steps to amortize it.\n\
+                     --offload-ssd <path> SSD-backed mmap offload store (implies --cpu-offload); requires \
+                     --offload-ssd-capacity-bytes <bytes>. In distributed training each rank uses its own file."
                 );
                 std::process::exit(0);
             }
@@ -737,6 +755,8 @@ fn parse_args() -> Result<Args> {
         distributed_mode,
         json_events,
         cpu_offload,
+        offload_ssd_path,
+        offload_ssd_capacity,
     };
     validate_args(&args)?;
     Ok(args)
@@ -5832,6 +5852,7 @@ fn run_distributed_epochs(
         let batch_index = usize::try_from(cursor.batch_cursor)
             .context("native batch cursor exceeds host usize range")?;
         if batch_index % args.gradient_accumulation_steps == 0 {
+            graph.maybe_restore_offloaded()?;
             let window_batch_count = args
                 .gradient_accumulation_steps
                 .min(full_batch_count - batch_index);
@@ -6302,6 +6323,7 @@ fn run_distributed_epochs(
                 epoch_loss_sum += f64::from(loss);
                 epoch_loss_values += 1;
             }
+            graph.maybe_offload()?;
         }
 
         let rolled_epoch = cursor.advance_batch()?;
@@ -7905,11 +7927,36 @@ fn run() -> Result<()> {
         );
     }
     if args.cpu_offload {
-        anyhow::ensure!(
-            args.remote_peer.is_none() && args.device_indices.is_none(),
-            "--cpu-offload is only supported on the single-device training path"
-        );
-        graph.enable_cpu_offload();
+        if let (Some(path), Some(capacity)) = (args.offload_ssd_path.clone(), args.offload_ssd_capacity) {
+            // Distributed: give each rank its own SSD file to avoid shared-file corruption.
+            let effective_path = if args.world_size > 1 {
+                let stem = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let ext = path
+                    .extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_default();
+                let dir = path
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_default();
+                dir.join(format!("{}-rank{}{}", stem, args.rank, ext))
+            } else {
+                path.clone()
+            };
+            let store =
+                hierarchos_vulkan::param_offload::MmapOffloadStore::new(&effective_path, capacity)?;
+            eprintln!(
+                "distributed offload: rank {} uses SSD file {}",
+                args.rank,
+                effective_path.display()
+            );
+            graph.enable_cpu_offload_with_store(Box::new(store));
+        } else {
+            graph.enable_cpu_offload();
+        }
         eprintln!(
             "vulkan_cpu_offload enabled: model parameters will be swapped to host memory between optimizer windows"
         );

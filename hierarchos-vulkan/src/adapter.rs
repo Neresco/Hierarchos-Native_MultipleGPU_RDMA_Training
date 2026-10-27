@@ -804,7 +804,7 @@ impl SharedTokenAdapterTrainer {
 
     pub(crate) fn offload_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         // Trainable parameters (canonical names match deepembed_trainables()).
         let p = crate::param_offload::prefixed_name;
@@ -836,7 +836,7 @@ impl SharedTokenAdapterTrainer {
 
     pub(crate) fn restore_params(
         &mut self,
-        store: &mut crate::param_offload::ParamOffloadStore,
+        store: &mut dyn crate::param_offload::OffloadStore,
     ) -> Result<()> {
         let p = crate::param_offload::prefixed_name;
         let mut take = |name: String| -> Result<GpuBuffer> {
