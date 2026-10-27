@@ -144,6 +144,29 @@ hierarchos-vulkan-rendezvous --listen 0.0.0.0:18599 --world-size N --state-file 
 then pass `--rendezvous HOST:18599` to every rank. The server holds ranks until
 N have checked in, then sends GO. `state.json` feeds the dashboard.
 
+### HF Transformer distributed training
+
+`hierarchos-vulkan-transformer-train` (the Hugging Face transformer path) also
+trains data-parallel over the same RDMA ring, with a chunked optimizer-state
+offload (see below). It uses the **AllReduce** topology directly (no rendezvous
+daemon — the ring control channel self-retries until all ranks are up). Every
+rank holds the full model, all-reduces the averaged gradient, and runs its own
+chunked optimizer step, so all ranks stay bit-identical:
+
+```
+hierarchos-vulkan-transformer-train \
+  --model <model-dir-or-hf-id> --dataset <train.jsonl> --output <out> \
+  --epochs N --batch-size B --seq-len S --learning-rate LR --seed SEED \
+  --cpu-offload --offload-ssd /tmp/offload.mmap --offload-ssd-capacity-bytes 8589934592 \
+  --world-size 6 --peer-ips IP0,IP1,...,IP5 --rdma-device rocep7s0 --rank R --device-index D
+```
+
+The transformer path **requires `--cpu-offload`** for distributed training
+(the optimizer runs after the gradient exchange, chunked through the offload
+store). In distributed mode the binary automatically gives each rank its own
+SSD file (`/tmp/offload.mmap` becomes `/tmp/offload-rank<R>.mmap`) so co-located
+ranks do not corrupt a shared file.
+
 ### Verified results (60M-param coherent-v9 model)
 
 - **Loss parity** vs single-node: distributed mean loss matches the single-node
@@ -172,6 +195,71 @@ On a machine where one of the compute GPUs also drives the display (gnome-shell
 or fault the GPU, crashing the desktop and triggering an automatic reboot. Use
 only the compute-only GPUs for big runs (identify them with the
 `hierarchos-vulkan-devices` binary plus `/sys/class/drm/card*/status`).
+
+## CPU / SSD optimizer-state offload
+
+Both training paths can move AdamW optimizer state out of VRAM so models that
+would not otherwise fit on a single GPU can train. Two backends share the same
+`OffloadStore` trait:
+
+- **Heap (CPU RAM)** — `--cpu-offload`. Optimizer state lives in host memory.
+- **SSD mmap** — `--offload-ssd <path> --offload-ssd-capacity-bytes <N>` (implies
+  `--cpu-offload`). A sparse mmap file lets the OS page cache balance hot state
+  in RAM against cold state spilling to NVMe, so the offloaded state can exceed
+  physical RAM.
+
+**HF Transformer path** uses a *chunked synced optimizer*: weights and gradients
+stay resident on the GPU; only the AdamW moments (`exp_avg`, `exp_avg_sq`) are
+offloaded. Each training step restores one chunk of moments, steps that chunk in
+its own submission, syncs, and evicts it back to the store, so the full moment
+state never occupies VRAM. Verified bit-identical losses versus the
+non-offloaded baseline (and versus a pure-RAM store) on Qwen3-0.6B over
+multiple steps, on both the heap and SSD mmap backends.
+
+**Hierarchos/RWKV path** uses a *parameter-swap* offload: between optimizer
+windows the model parameters are swapped to the store (GPU buffers become
+1-element stubs) and restored before the next forward pass. This is supported on
+both the single-device and the distributed (RDMA ring) paths; in distributed mode
+each rank gets its own SSD file and the rank-0 checkpoint export restores the
+offloaded parameters before writing the package.
+
+**6-GPU cross-machine offload** (verified): PC1 (4x RX 9060 XT) + PC2 (RX 7600
+XT + 8060S iGPU), 6 ranks over the RDMA ring with CPU/SSD offload enabled.
+Both the HF Transformer and Hierarchos paths reach `weights_in_sync=true` with
+an identical weight checksum across all six ranks and export a valid checkpoint.
+The 8060S iGPU is the ring bottleneck (≈6.7x slower), so expect the slowest rank
+to gate the group.
+
+## Web dashboard (multi-node control UI)
+
+`hierarchos-dashboard/server.py` (Python, no dependencies beyond stdlib) provides
+a browser UI for monitoring and launching training across the cluster. It
+auto-refreshes hardware (per-GPU VRAM/util/temperature/power, CPU load, RAM),
+RDMA NIC counters, rendezvous state, per-rank training status, a loss curve, and
+live logs.
+
+**Launching from the browser.** The dashboard exposes a configurable launcher
+with a **training variant** selector:
+
+- **HF Transformer** — model path or HF hub id, dataset, sequence length,
+  max-steps, text field, epochs, batch, learning rate, seed, GPU, and CPU/SSD
+  offload. Single-device start or N-rank distributed start (RDMA ring).
+- **Hierarchos (RWKV)** — tokenizer, training data, ponder-loss weight,
+  fp16, plus the shared epoch/batch/lr/seed/GPU fields and offload. Single-device
+  (via `hierarchos-native-cli`) or N-rank distributed (param-server / allreduce /
+  zero1).
+
+Nodes are registered in the UI (name, IP, SSH target, GPU device index, RDMA
+device, ring rank). The distributed launcher wires the selected nodes into a
+ring using each node's stored rank + RDMA device and spawns a rendezvous barrier
+on the rank-0 host. Logs from every node stream into the log panels.
+
+```
+python3 hierarchos-dashboard/server.py            # serves http://0.0.0.0:7788/
+```
+
+Set `DASH_PORT` to change the port. SSH key auth must be configured for the
+remote nodes (stats and launch use `ssh <remote> ...`).
 
 ## Training-kernel optimizations and verification
 

@@ -124,6 +124,47 @@ See the [backend optimization details](hierarchos-vulkan/README.md#training-kern
 [numerical sign-off and reproduction commands](hierarchos-vulkan/validation/SHIP_PARITY.md),
 and [development measurements](PROGRESS_HIERARCHOS_VULKAN_TRAINING_OPTIMIZATIONS.md).
 
+## Multi-GPU, multi-node distributed training over RDMA
+
+The Vulkan training backend trains data-parallel across multiple GPUs and
+multiple machines over **RoCE (RDMA)**. Both training paths — the Hugging Face
+transformer (`hierarchos-vulkan-transformer-train`) and the Hierarchos/RWKV graph
+(`hierarchos-vulkan-train`) — support it.
+
+- **AllReduce ring** (N ranks): reduce-scatter + allgather of the full gradient
+  over a dedicated `roce*` device; every rank runs its own identical optimizer
+  step. Verified across 6 GPUs on 2 machines (4x RX 9060 XT + RX 7600 XT + 8060S
+  iGPU) at ~2.9 GB/s, with every rank reaching `weights_in_sync=true` and an
+  identical weight checksum.
+- **ZeRO-1** (N ranks): full gradient allreduce + sharded AdamW moments +
+  parameter allgather, for VRAM extension on large models.
+- **param-server** (2 ranks): minimum-communication primary/replica mode with
+  R5(b) param-only merged-gradient broadcast.
+
+### CPU / SSD optimizer-state offload
+
+Both paths move AdamW optimizer state out of VRAM so larger models fit. The
+backends share the `OffloadStore` trait: a heap store in CPU RAM
+(`--cpu-offload`) or a sparse mmap file whose hot pages stay in RAM and cold
+pages spill to NVMe (`--offload-ssd <path> --offload-ssd-capacity-bytes <N>`).
+This is verified on the 6-GPU cross-machine ring for both the transformer
+(chunked synced optimizer) and Hierarchos (parameter-swap) paths, with a valid
+checkpoint export at the end.
+
+### Web dashboard
+
+`hierarchos-dashboard/server.py` is a dependency-free Python browser UI for
+monitoring (per-GPU VRAM/util/temperature, RDMA counters, per-rank status, loss
+curve, live logs) and launching training. It offers a **training-variant
+selector** (HF Transformer vs Hierarchos) with all run settings configurable —
+model path/HF id, dataset, sequence length, max-steps, epochs, batch, learning
+rate, seed, GPU selection, CPU/SSD offload, and single-device or N-rank
+distributed launch. See the [backend README](hierarchos-vulkan/README.md#web-dashboard-multi-node-control-ui)
+for the full launcher reference.
+
+See the [distributed training reference](hierarchos-vulkan/README.md#multi-gpu-and-multi-node-distributed-training)
+for CLI flags, the rendezvous barrier, and verified results.
+
 ## Requirements
 
 For normal native use you need:
