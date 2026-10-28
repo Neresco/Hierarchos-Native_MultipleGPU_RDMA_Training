@@ -186,12 +186,24 @@ owned shards per rank** to keep host RAM bounded.
   1-element stub (reusing the offload_moments stub-swap pattern); store shards in
   the `OffloadStore` (RAM/SSD). Test: 27B shards materialize on 2 GPUs without the
   54 GB host spike.
-- **Phase 3** — Parameter gather: `ring_allgather_sharded` + transparent `values`
-  swap for one layer's forward. Test: forward logits match single-rank on a small model.
-- **Phase 4** — Per-layer gather across the whole forward + activation tape; verify
-  forward parity.
-- **Phase 5** — Backward gather + gradient reduce-scatter; verify grad parity vs
-  AllReduce.
+- **Phase 3** — Chunked forward gather. ✅ helper done (`zero3::layer_chunks`;
+  `init_zero3`, `zero3_gather_chunk`, `zero3_reshard_chunk`, `read_all_values` in
+  transformer.rs). **Remaining:** restructure the train_step forward.
+  - The forward layer loop is at transformer.rs:81790; backward at 82350. Both
+    record into ONE `ComputeBatch` (`commands`, created ~81138) submitted once
+    at the end.
+  - Chunking: replace the single layer loop with
+    `for (a,b) in zero3_layer_chunks { gather_chunk(a..b); for i in a..b { record layer i forward into `commands` } commands.submit(); reshard_chunk(a..b); }`.
+    The embedding (kept full, not sharded) and final_norm/lm_head must be gathered
+    in the chunks that touch them (lm_head is sharded via collect_trainables).
+  - **Decision needed:** a separate `train_step_zero3` path (cleaner, duplicates
+    ~500 lines of forward) vs in-place conditional chunking. Leaning separate path
+    gated by `zero3_enabled`.
+- **Phase 4** — Full forward parity on a small model (2 GPUs, loopback): chunked
+  gather forward logits must match the non-ZeRO-3 single-rank logits.
+- **Phase 5** — Backward chunked gather + `ring_reduce_scatter` of grads; verify
+  grad parity vs AllReduce. The backward loop (82350) needs the same chunked
+  gather/submit/reshard, then a reduce-scatter of the flat grad buffer.
 - **Phase 6** — Sharded optimizer over owned slices + moment offload; verify step
   parity vs single-rank AllReduce on a small model.
 - **Phase 7** — Offload grad/moment shards to RAM/SSD; VRAM accounting.

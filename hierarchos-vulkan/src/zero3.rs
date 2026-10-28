@@ -105,6 +105,31 @@ pub fn slots_in_chunk(slots: &[ParamSlot], chunk: &std::ops::Range<usize>) -> Ve
         .collect()
 }
 
+/// Group layers into chunks whose combined value bytes stay under `budget`.
+///
+/// `layer_sizes` is the number of f32 elements per layer (in order). Returns
+/// `(start_layer, end_layer)` half-open ranges; each range's total elements fit
+/// the budget. Layers larger than the budget get their own chunk.
+pub fn layer_chunks(layer_sizes: &[usize], budget: usize) -> Vec<(usize, usize)> {
+    assert!(budget > 0);
+    let budget_elems = budget / 4;
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    let mut acc = 0usize;
+    for (i, &size) in layer_sizes.iter().enumerate() {
+        if acc + size > budget_elems && acc > 0 {
+            chunks.push((start, i));
+            start = i;
+            acc = 0;
+        }
+        acc += size;
+    }
+    if start < layer_sizes.len() {
+        chunks.push((start, layer_sizes.len()));
+    }
+    chunks
+}
+
 /// Host-side storage of one rank's slice of the flat buffer, backed by a plain
 /// Vec (which can itself be placed in the offload store for RAM/SSD persistence).
 #[derive(Debug)]
@@ -217,6 +242,25 @@ mod tests {
             checked[range].copy_from_slice(stores[r].slice());
         }
         assert_eq!(checked, expected);
+    }
+
+    #[test]
+    fn layer_chunks_cover_all_under_budget() {
+        let sizes = vec![10usize, 10, 10, 10, 10, 10]; // 6 layers, 10 elems each
+        // budget 40 bytes = 10 elems -> one layer per chunk.
+        let c = layer_chunks(&sizes, 40);
+        let total: usize = c.iter().map(|(a, b)| b - a).sum();
+        assert_eq!(total, 6);
+        for (a, b) in &c {
+            let elems: usize = sizes[*a..*b].iter().sum();
+            assert!(elems * 4 <= 40);
+        }
+        // budget 300 bytes = 75 elems -> all 6 layers in one chunk.
+        let c = layer_chunks(&sizes, 300);
+        assert_eq!(c, vec![(0usize, 6)]);
+        // a single huge layer gets its own chunk even if over budget.
+        let c = layer_chunks(&vec![1000usize], 40);
+        assert_eq!(c, vec![(0usize, 1)]);
     }
 
     #[test]
