@@ -20,8 +20,8 @@ pub struct ParamSlot {
     pub start: usize,
     /// Element count (the parameter's `len`).
     pub len: usize,
-    /// Stable identity for logging / debugging.
-    pub name: &'static str,
+    /// Index in the collect order (stable identity for logging).
+    pub index: usize,
 }
 
 impl ParamSlot {
@@ -222,14 +222,14 @@ mod tests {
     #[test]
     fn slots_in_chunk_selects_intersections() {
         let slots = vec![
-            ParamSlot { start: 0, len: 10, name: "a" },
-            ParamSlot { start: 10, len: 10, name: "b" },
-            ParamSlot { start: 20, len: 10, name: "c" },
+            ParamSlot { start: 0, len: 10, index: 0 },
+            ParamSlot { start: 10, len: 10, index: 1 },
+            ParamSlot { start: 20, len: 10, index: 2 },
         ];
         let picked = slots_in_chunk(&slots, &(5..25));
-        let names: Vec<&str> = picked.iter().map(|s| s.name).collect();
-        assert_eq!(names, vec!["a", "b", "c"]);
+        let idx: Vec<usize> = picked.iter().map(|s| s.index).collect();
+        assert_eq!(idx, vec![0, 1, 2]);
         let picked = slots_in_chunk(&slots, &(10..20));
-        assert_eq!(picked.iter().map(|s| s.name).collect::<Vec<_>>(), vec!["b"]);
+        assert_eq!(picked.iter().map(|s| s.index).collect::<Vec<_>>(), vec![1]);
     }
 }

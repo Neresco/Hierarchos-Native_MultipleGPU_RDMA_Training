@@ -63876,6 +63876,14 @@ pub struct VulkanTransformer {
     chunked_offload_chunk_bytes: usize,
     /// Distributed AllReduce gradient exchanger, set for multi-node training.
     gradient_exchanger: Option<Box<dyn GradientExchanger>>,
+    /// ZeRO-3 state: each rank persists only its slice of the flat values
+    /// buffer; the full values are gathered on demand per chunk and freed.
+    zero3_enabled: bool,
+    zero3_rank: usize,
+    zero3_world: usize,
+    zero3_layout: crate::zero3::ShardLayout,
+    /// This rank's slice of the flat values buffer (owned shard).
+    zero3_shard: Vec<f32>,
     dropout_seed: u32,
     layerdrop: f32,
     lora_configs: BTreeMap<String, VulkanTransformerLoraConfig>,
@@ -64163,6 +64171,154 @@ impl VulkanTransformer {
         self.gradient_exchanger = Some(exchanger);
     }
 
+    /// The flat values layout for ZeRO-3: each `collect_trainables` parameter's
+    /// (start, len) in the concatenated buffer, in deterministic order. The
+    /// shared embedding is excluded (kept full on every rank for now).
+    fn zero3_param_slots(&mut self) -> Vec<crate::zero3::ParamSlot> {
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        let mut slots = Vec::with_capacity(trainables.len());
+        let mut cursor = 0usize;
+        for (i, t) in trainables.iter().enumerate() {
+            slots.push(crate::zero3::ParamSlot {
+                start: cursor,
+                len: t.len,
+                index: i,
+            });
+            cursor += t.len;
+        }
+        slots
+    }
+
+    /// Total f32 elements across the ZeRO-3-shardable parameters.
+    pub fn zero3_total_values(&mut self) -> usize {
+        self.zero3_param_slots().iter().map(|s| s.len).sum()
+    }
+
+    /// Initialize ZeRO-3 sharding: read every shardable parameter into a flat
+    /// buffer, keep only this rank's slice, and stub the full buffers to free
+    /// VRAM. After this, the parameters must be gathered per-chunk before use.
+    pub fn init_zero3(&mut self, rank: usize, world_size: usize) -> Result<usize> {
+        anyhow::ensure!(world_size >= 1, "zero3 world_size must be >= 1");
+        let slots = self.zero3_param_slots();
+        let total: usize = slots.iter().map(|s| s.len).sum();
+        let full = self.read_all_values()?;
+        anyhow::ensure!(
+            full.len() == total,
+            "zero3 flat values length {} != slot total {}",
+            full.len(),
+            total
+        );
+        let layout = crate::zero3::ShardLayout::new(total, world_size);
+        let range = layout.slice_range(rank);
+        let shard = full[range.clone()].to_vec();
+        // Stub every shardable parameter's values buffer to 1 element to free
+        // VRAM; the full values live in `shard` and are gathered on demand.
+        self.zero3_stub_all_params()?;
+        self.zero3_enabled = true;
+        self.zero3_rank = rank;
+        self.zero3_world = world_size;
+        self.zero3_layout = layout;
+        self.zero3_shard = shard;
+        Ok(total)
+    }
+
+    fn zero3_stub_all_params(&mut self) -> Result<()> {
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for t in trainables.iter_mut() {
+            let device = t.device.clone();
+            t.values = GpuBuffer::zeros_f32(&device, 1)?;
+        }
+        Ok(())
+    }
+
+    /// Materialize (unstub) a parameter's full `values` buffer from a slice of
+    /// the gathered flat chunk. `local` is the parameter's elements within the
+    /// chunk (already positioned at the parameter's start).
+    fn zero3_materialize_param(t: &mut TrainableParameter, local: &[f32]) -> Result<()> {
+        anyhow::ensure!(local.len() == t.len, "materialize length mismatch");
+        t.values = GpuBuffer::from_f32(&t.device, local)?;
+        Ok(())
+    }
+
+    /// Gather one chunk of the flat values buffer across all ranks and
+    /// materialize the parameters it touches. `chunk` is a range of the flat
+    /// buffer. After this call, every parameter whose slot intersects `chunk`
+    /// has a full, populated `values` buffer; the caller must call
+    /// [`Self::zero3_reshard_chunk`] when done.
+    pub fn zero3_gather_chunk(
+        &mut self,
+        ring: &mut crate::distributed::RingTransport,
+        chunk: &std::ops::Range<usize>,
+    ) -> Result<()> {
+        anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
+        let layout = &self.zero3_layout;
+        let world = self.zero3_world;
+        let chunk_len = chunk.end - chunk.start;
+        // Build the per-owner segments (relative to the chunk) for this chunk.
+        let mut segments = Vec::with_capacity(world);
+        let mut cursor = 0usize;
+        for r in 0..world {
+            let sr = layout.slice_range(r);
+            let lo = sr.start.max(chunk.start);
+            let hi = sr.end.min(chunk.end);
+            anyhow::ensure!(
+                lo <= hi && lo >= cursor,
+                "zero3 gather segments are not contiguous"
+            );
+            segments.push(cursor..(hi - chunk.start));
+            cursor = hi - chunk.start;
+        }
+        anyhow::ensure!(
+            cursor == chunk_len,
+            "zero3 gather segments do not cover the chunk"
+        );
+        // Each rank fills its own segment from its stored slice.
+        let mut full_chunk = vec![0f32; chunk_len];
+        let my_seg = segments[self.zero3_rank].clone();
+        let my_flat_start = chunk.start + my_seg.start;
+        let my_range = layout.slice_range(self.zero3_rank);
+        // The rank's stored slice covers my_range of the flat buffer; the part
+        // inside this chunk is [my_flat_start, my_flat_start + my_seg.len()).
+        let off = my_flat_start - my_range.start;
+        full_chunk[my_seg.clone()].copy_from_slice(&self.zero3_shard[off..off + my_seg.len()]);
+        if world > 1 {
+            crate::distributed::ring_allgather_sharded(ring, self.zero3_rank, world, &segments, &mut full_chunk)?;
+        }
+        // Materialize every parameter intersecting the chunk.
+        let slots = self.zero3_param_slots();
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for (slot, t) in slots.iter().zip(trainables.iter_mut()) {
+            let sr = slot.range();
+            if sr.end > chunk.start && sr.start < chunk.end {
+                let lo = sr.start.max(chunk.start);
+                let hi = sr.end.min(chunk.end);
+                anyhow::ensure!(lo == sr.start && hi == sr.end, "chunk must align to param boundaries");
+                Self::zero3_materialize_param(t, &full_chunk[lo - chunk.start..hi - chunk.start])?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Stub the parameters intersecting `chunk` back to 1-element buffers, free
+    /// their VRAM. Pairs with [`Self::zero3_gather_chunk`].
+    pub fn zero3_reshard_chunk(&mut self, chunk: &std::ops::Range<usize>) -> Result<()> {
+        anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
+        let slots = self.zero3_param_slots();
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for (slot, t) in slots.iter().zip(trainables.iter_mut()) {
+            let sr = slot.range();
+            if sr.end > chunk.start && sr.start < chunk.end {
+                let device = t.device.clone();
+                t.values = GpuBuffer::zeros_f32(&device, 1)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Concatenate every trainable's gradient (plus the shared embedding's
     /// gradient) into a flat vector, in `collect_trainables` order followed by
     /// the shared embedding. The order is deterministic across ranks, so the
@@ -64206,6 +64362,54 @@ impl VulkanTransformer {
             "flat gradient length {} does not match trainable total {}",
             grads.len(),
             cursor + shared_len
+        );
+        Ok(())
+    }
+
+    /// Read every trainable's `values` into a flat host vector in
+    /// `collect_trainables` order (plus the shared embedding last). This is the
+    /// flat representation ZeRO-3 shards across ranks.
+    pub fn read_all_values(&mut self) -> Result<Vec<f32>> {
+        let mut out: Vec<f32> = Vec::new();
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            for t in trainables.iter() {
+                out.extend_from_slice(&t.values.read_f32(t.len)?);
+            }
+        }
+        let shared_len = self.shared_embedding.len();
+        if shared_len > 0 {
+            let buf = self.shared_embedding.weight_buffer();
+            out.extend_from_slice(&buf.read_f32(shared_len)?);
+        }
+        Ok(out)
+    }
+
+    /// Write a flat values vector back into every trainable's `values` buffer
+    /// (plus the shared embedding), using the same deterministic order as
+    /// `read_all_values`.
+    pub fn write_all_values(&mut self, values: &[f32]) -> Result<()> {
+        let mut cursor = 0usize;
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            for t in trainables.iter_mut() {
+                t.values.write_f32(&values[cursor..cursor + t.len])?;
+                cursor += t.len;
+            }
+        }
+        let shared_len = self.shared_embedding.len();
+        if shared_len > 0 {
+            let buf = self.shared_embedding.weight_buffer();
+            buf.write_f32(&values[cursor..cursor + shared_len])?;
+            cursor += shared_len;
+        }
+        anyhow::ensure!(
+            cursor == values.len(),
+            "flat values length {} does not match trainable total {}",
+            values.len(),
+            cursor
         );
         Ok(())
     }
@@ -66336,6 +66540,11 @@ impl VulkanTransformer {
             chunked_offload_store: None,
             chunked_offload_chunk_bytes: 0,
             gradient_exchanger: None,
+            zero3_enabled: false,
+            zero3_rank: 0,
+            zero3_world: 1,
+            zero3_layout: crate::zero3::ShardLayout::new(1, 1),
+            zero3_shard: Vec::new(),
             token_ids: GpuBuffer::zeros_u32(&device, rows)?,
             token_type_ids: GpuBuffer::zeros_u32(&device, rows)?,
             auxiliary_ids: GpuBuffer::zeros_u32(&device, rows)?,
