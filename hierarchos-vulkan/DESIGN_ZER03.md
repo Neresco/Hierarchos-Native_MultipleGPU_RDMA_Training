@@ -196,9 +196,24 @@ owned shards per rank** to keep host RAM bounded.
     `for (a,b) in zero3_layer_chunks { gather_chunk(a..b); for i in a..b { record layer i forward into `commands` } commands.submit(); reshard_chunk(a..b); }`.
     The embedding (kept full, not sharded) and final_norm/lm_head must be gathered
     in the chunks that touch them (lm_head is sharded via collect_trainables).
-  - **Decision needed:** a separate `train_step_zero3` path (cleaner, duplicates
-    ~500 lines of forward) vs in-place conditional chunking. Leaning separate path
-    gated by `zero3_enabled`.
+  - **Decision:** in-place conditional chunking gated by `zero3_enabled`, keeping
+    the non-ZeRO-3 path untouched. State fields added: `zero3_chunk_bytes` (gather
+    budget), `zero3_ring` (RingTransport for allgather/reduce-scatter), plus the
+    Phase 2b fields.
+  - **Exact forward loop change** (loop at 81790): before the loop, when
+    `zero3_enabled`, compute `groups = zero3::layer_chunks(layer_sizes, chunk_bytes)`
+    and `ranges = zero3_layer_flat_ranges()`. Track `cur_group`. Inside the loop,
+    when entering a layer in a new group: `commands.submit()?` (if cur_group>0),
+    `zero3_reshard_chunk(&prev_flat_range)?`, `zero3_gather_chunk(&mut
+    self.zero3_ring, &ranges[a].start..ranges[b-1].end)?`, and for cur_group>0
+    recreate `commands = ComputeBatch::new(&device)?` (cur_group 0 keeps the
+    existing `commands` that already holds the embedding setup — the embedding is
+    kept full, not sharded).
+  - **Terminal params (lm_head, final_norm, embedding_norm):** these are the
+    non-layer prefix of the flat buffer and are used AFTER the layer loop (logits
+    + cross-entropy). Gather the prefix range `[0, non_layer)` before the
+    terminal section, submit after cross-entropy, reshard. `non_layer` =
+    `zero3_total_values() - sum(ranges)`.
 - **Phase 4** — Full forward parity on a small model (2 GPUs, loopback): chunked
   gather forward logits must match the non-ZeRO-3 single-rank logits.
 - **Phase 5** — Backward chunked gather + `ring_reduce_scatter` of grads; verify

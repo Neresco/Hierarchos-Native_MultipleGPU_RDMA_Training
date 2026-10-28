@@ -63884,6 +63884,10 @@ pub struct VulkanTransformer {
     zero3_layout: crate::zero3::ShardLayout,
     /// This rank's slice of the flat values buffer (owned shard).
     zero3_shard: Vec<f32>,
+    /// Gather budget in bytes per forward/backward chunk (bound by free VRAM).
+    zero3_chunk_bytes: usize,
+    /// Ring transport used for the ZeRO-3 all-gather / reduce-scatter.
+    zero3_ring: Option<crate::distributed::RingTransport>,
     dropout_seed: u32,
     layerdrop: f32,
     lora_configs: BTreeMap<String, VulkanTransformerLoraConfig>,
@@ -66569,6 +66573,8 @@ impl VulkanTransformer {
             zero3_world: 1,
             zero3_layout: crate::zero3::ShardLayout::new(1, 1),
             zero3_shard: Vec::new(),
+            zero3_chunk_bytes: 0,
+            zero3_ring: None,
             token_ids: GpuBuffer::zeros_u32(&device, rows)?,
             token_type_ids: GpuBuffer::zeros_u32(&device, rows)?,
             auxiliary_ids: GpuBuffer::zeros_u32(&device, rows)?,
