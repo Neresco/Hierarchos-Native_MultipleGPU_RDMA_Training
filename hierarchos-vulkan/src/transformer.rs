@@ -64195,6 +64195,30 @@ impl VulkanTransformer {
         self.zero3_param_slots().iter().map(|s| s.len).sum()
     }
 
+    /// The flat-buffer range of each layer's parameters, in layer order. The
+    /// layers are the trailing, contiguous portion of the ZeRO-3 flat layout, so
+    /// chunking by whole layers stays aligned to parameter boundaries (a hard
+    /// requirement for [`Self::zero3_gather_chunk`]).
+    pub fn zero3_layer_flat_ranges(&mut self) -> Result<Vec<std::ops::Range<usize>>> {
+        let mut layer_counts: Vec<usize> = Vec::with_capacity(self.layers.len());
+        for layer in self.layers.iter_mut() {
+            let mut tmp: Vec<&mut TrainableParameter> = Vec::new();
+            layer.collect_trainables(&mut tmp);
+            layer_counts.push(tmp.iter().map(|t| t.len).sum::<usize>());
+        }
+        let layer_total: usize = layer_counts.iter().sum();
+        let total = self.zero3_total_values();
+        anyhow::ensure!(layer_total <= total, "zero3 layer params exceed total");
+        let non_layer = total - layer_total;
+        let mut ranges = Vec::with_capacity(layer_counts.len());
+        let mut cursor = non_layer;
+        for &c in &layer_counts {
+            ranges.push(cursor..cursor + c);
+            cursor += c;
+        }
+        Ok(ranges)
+    }
+
     /// Initialize ZeRO-3 sharding: read every shardable parameter into a flat
     /// buffer, keep only this rank's slice, and stub the full buffers to free
     /// VRAM. After this, the parameters must be gathered per-chunk before use.
