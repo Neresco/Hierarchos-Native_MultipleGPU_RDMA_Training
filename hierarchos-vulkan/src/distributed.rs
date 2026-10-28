@@ -1045,6 +1045,55 @@ pub fn ring_allreduce_sum(
     Ok(())
 }
 
+/// The block index that rank `rank` owns (fully reduced) after a
+/// [`ring_reduce_scatter`]. The scatter places reduced block `(rank+1) mod n`
+/// on rank `rank` (same convention as phase 1 of `ring_allreduce_sum`).
+pub fn reduce_scatter_owned_block(rank: usize, world_size: usize) -> usize {
+    let r = (rank as isize + 1) % world_size as isize;
+    (((r + world_size as isize) % world_size as isize) as usize)
+}
+
+/// Ring reduce-scatter: on entry every rank holds the full f32 buffer; after
+/// the call rank `r` holds the fully-reduced (element-wise world sum) block
+/// [`reduce_scatter_owned_block(r)`] and all other blocks are stale.
+///
+/// This is the gradient-scatter primitive for ZeRO-3: each rank does a
+/// redundant backward producing the full gradient, and reduce-scatter leaves
+/// each rank with only its owned slice of the summed gradient.
+pub fn ring_reduce_scatter(
+    transport: &mut RingTransport,
+    rank: usize,
+    world_size: usize,
+    data: &mut Vec<f32>,
+) -> anyhow::Result<()> {
+    let n = world_size;
+    anyhow::ensure!(n >= 2, "ring reduce-scatter needs >= 2 ranks");
+    let total = data.len();
+    let bs = (total + n - 1) / n; // ceil block size; last block may be smaller
+    let range_of = |b: usize| (b * bs)..(b * bs + bs).min(total);
+    let modn = |x: isize| (((x % n as isize) + n as isize) % n as isize) as usize;
+
+    // Same rotation as phase 1 of `ring_allreduce_sum`: at step s rank r sends
+    // block (r-s) and reduces received into block (r-s-1). After n-1 steps rank
+    // r holds the fully-reduced block (r+1) mod n.
+    for s in 0..n - 1 {
+        let send_b = modn(rank as isize - s as isize);
+        let recv_b = modn(rank as isize - s as isize - 1);
+        let sr = range_of(send_b);
+        let rr = range_of(recv_b);
+        let received = exchange_blocks(
+            &mut transport.send_to_successor,
+            &mut transport.recv_from_predecessor,
+            &data[sr],
+            rr.len(),
+        )?;
+        for (a, b) in data[rr].iter_mut().zip(received.iter()) {
+            *a = *a + b;
+        }
+    }
+    Ok(())
+}
+
 /// Segment owner whose payload rank `rank` receives at ring step `step`.
 ///
 /// At step s every rank forwards segment owner `(r - s) mod n`; rank r's
@@ -1240,6 +1289,56 @@ mod tests {
                     buffers[r], expected,
                     "n={n} rank {r}: sharded allgather rotation produced wrong buffer"
                 );
+            }
+        }
+    }
+
+    /// Simulate the [`ring_reduce_scatter`] rotation in memory: each rank starts
+    /// with a buffer where element i carries a distinct value derived from
+    /// (rank, block, element). After n-1 ring steps, rank r must hold the full
+    /// world sum in its owned block (r+1) mod n.
+    #[test]
+    fn reduce_scatter_rotation_reduces_owned_block() {
+        for &n in &[2usize, 3, 4, 7] {
+            let bs = 5usize; // elements per block
+            let total = n * bs;
+            let modn = |x: isize, n: usize| (((x % n as isize) + n as isize) % n as isize) as usize;
+            // rank r, block b, element e -> value r*1000 + b*10 + e.
+            let value = |r: usize, b: usize, e: usize| (r * 1000 + b * 10 + e) as f32;
+            let mut buffers: Vec<Vec<f32>> = (0..n)
+                .map(|r| (0..total).map(|i| value(r, i / bs, i % bs)).collect())
+                .collect();
+            for s in 0..n - 1 {
+                // Each rank sends block send_b to its successor; the successor
+                // reduces it into its recv_b (= modn(pred - s), i.e. send_b).
+                let mut received: Vec<Vec<f32>> = vec![vec![0.0; total]; n];
+                for r in 0..n {
+                    let send_b = modn(r as isize - s as isize, n);
+                    let succ = (r + 1) % n;
+                    let recv_b = modn(succ as isize - s as isize - 1, n);
+                    assert_eq!(send_b, recv_b);
+                    for e in 0..bs {
+                        received[succ][recv_b * bs + e] = buffers[r][send_b * bs + e];
+                    }
+                }
+                for r in 0..n {
+                    let recv_b = modn(r as isize - s as isize - 1, n);
+                    for e in 0..bs {
+                        buffers[r][recv_b * bs + e] += received[r][recv_b * bs + e];
+                    }
+                }
+            }
+            for r in 0..n {
+                let owned = reduce_scatter_owned_block(r, n);
+                for e in 0..bs {
+                    let expected: f32 = (0..n).map(|rr| value(rr, owned, e)).sum();
+                    assert!(
+                        (buffers[r][owned * bs + e] - expected).abs() < 1e-3,
+                        "n={n} rank {r} owned block {owned} elem {e}: {} != {}",
+                        buffers[r][owned * bs + e],
+                        expected
+                    );
+                }
             }
         }
     }

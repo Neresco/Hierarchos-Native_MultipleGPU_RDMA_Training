@@ -161,7 +161,20 @@ owned shards per rank** to keep host RAM bounded.
 ## 4. Phases (incremental, tested)
 
 - **Phase 0** — Design doc (this file). ✅
-- **Phase 1** — `ring_reduce_scatter` primitive in distributed.rs + unit test on 2 ranks.
+- **Phase 1** — `ring_reduce_scatter` primitive in distributed.rs + unit test. ✅
+  - Added `ring_reduce_scatter` (distributed.rs) — phase 1 of ring_allreduce_sum;
+    rank r ends with the reduced block `reduce_scatter_owned_block(r) = (r+1) mod n`.
+  - Unit test `reduce_scatter_rotation_reduces_owned_block` verifies the rotation
+    in memory for n ∈ {2,3,4,7}.
+  - **Refinement (important):** the forward/backward are recorded into ONE
+    `ComputeBatch` and submitted once. A gathered full-param buffer bound by a
+    dispatch must stay alive until that batch executes. Therefore the model
+    cannot hold all gathered layers at once (54 GB). The forward must be
+    decomposed into **chunks of layers**: gather chunk params (CPU RDMA) → record
+    chunk forward → submit chunk → free chunk params → next chunk. Same for
+    backward (reverse chunks). Chunk size is bounded by
+    `(VRAM - resident_shards - activations - grad_buffer)`. This is the
+    "slow but functional" part. Phase 3-5 target this chunked gather.
 - **Phase 2** — Shard layout: extend `TrainableParameter` with shard fields; load
   only owned shards; `collect_trainables`-ordered flat shard buffer; expose
   `owned_slices`. Test: 27B shards load on 2 GPUs without RAM overflow.
