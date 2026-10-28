@@ -175,9 +175,17 @@ owned shards per rank** to keep host RAM bounded.
     backward (reverse chunks). Chunk size is bounded by
     `(VRAM - resident_shards - activations - grad_buffer)`. This is the
     "slow but functional" part. Phase 3-5 target this chunked gather.
-- **Phase 2** — Shard layout: extend `TrainableParameter` with shard fields; load
-  only owned shards; `collect_trainables`-ordered flat shard buffer; expose
-  `owned_slices`. Test: 27B shards load on 2 GPUs without RAM overflow.
+- **Phase 2a** — Shard math foundation. ✅
+  - New module `src/zero3.rs`: `ShardLayout` (equal contiguous slices), `chunk_ranges`
+    (partition the flat buffer into VRAM-bounded chunks), `slots_in_chunk`, and
+    `ShardStore` (one rank's slice). Unit-tested: slice partitioning, chunk
+    coverage, gather round-trip, reduce-scatter into slices.
+  - `ring_reduce_scatter` + `reduce_scatter_owned_block` in distributed.rs (Phase 1).
+- **Phase 2b** — GPU integration: build the flat values buffer from `collect_trainables`
+  order; shard it (each rank keeps slice `rank`); free each param's `values` to a
+  1-element stub (reusing the offload_moments stub-swap pattern); store shards in
+  the `OffloadStore` (RAM/SSD). Test: 27B shards materialize on 2 GPUs without the
+  54 GB host spike.
 - **Phase 3** — Parameter gather: `ring_allgather_sharded` + transparent `values`
   swap for one layer's forward. Test: forward logits match single-rank on a small model.
 - **Phase 4** — Per-layer gather across the whole forward + activation tape; verify

@@ -9,6 +9,7 @@ mod adapter;
 mod checkpoint;
 mod control;
 pub mod distributed;
+pub mod zero3;
 mod full_training_graph;
 #[cfg(test)]
 mod hierarchos_ce_mask_tests;
