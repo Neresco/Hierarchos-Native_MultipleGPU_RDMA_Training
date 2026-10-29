@@ -64230,13 +64230,17 @@ impl VulkanTransformer {
         anyhow::ensure!(world_size >= 1, "zero3 world_size must be >= 1");
         let slots = self.zero3_param_slots();
         let total: usize = slots.iter().map(|s| s.len).sum();
-        let full = self.read_all_values()?;
+        // `read_all_values` appends the shared embedding last; the ZeRO-3 flat
+        // layout covers only `collect_trainables` (the shared embedding is
+        // kept full on every rank and is not sharded). Truncate to `total`.
+        let mut full = self.read_all_values()?;
         anyhow::ensure!(
-            full.len() == total,
-            "zero3 flat values length {} != slot total {}",
+            full.len() >= total,
+            "zero3 flat values length {} < slot total {}",
             full.len(),
             total
         );
+        full.truncate(total);
         let layout = crate::zero3::ShardLayout::new(total, world_size);
         let range = layout.slice_range(rank);
         let shard = full[range.clone()].to_vec();
@@ -64277,7 +64281,7 @@ impl VulkanTransformer {
     /// [`Self::zero3_reshard_chunk`] when done.
     pub fn zero3_gather_chunk(
         &mut self,
-        ring: &mut crate::distributed::RingTransport,
+        ring: Option<&mut crate::distributed::RingTransport>,
         chunk: &std::ops::Range<usize>,
     ) -> Result<()> {
         anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
@@ -64312,6 +64316,8 @@ impl VulkanTransformer {
         let off = my_flat_start - my_range.start;
         full_chunk[my_seg.clone()].copy_from_slice(&self.zero3_shard[off..off + my_seg.len()]);
         if world > 1 {
+            let ring = ring
+                .context("zero3 world > 1 requires a ring transport")?;
             crate::distributed::ring_allgather_sharded(ring, self.zero3_rank, world, &segments, &mut full_chunk)?;
         }
         // Materialize every parameter intersecting the chunk.
@@ -64344,6 +64350,50 @@ impl VulkanTransformer {
                 t.values = GpuBuffer::zeros_f32(&device, 1)?;
             }
         }
+        Ok(())
+    }
+
+    /// Re-shard every ZeRO-3 parameter back to this rank's owned slice and
+    /// write the freshly-optimized full values into the local shard buffer.
+    /// Call this after the optimizer has updated `values` so the next
+    /// step's gathers start from the updated shard.
+    pub fn zero3_reshard_all(&mut self) -> Result<()> {
+        anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
+        let full = self.read_all_values()?;
+        let layout = &self.zero3_layout;
+        let range = layout.slice_range(self.zero3_rank);
+        self.zero3_shard = full[range.clone()].to_vec();
+        let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+        self.collect_trainables(&mut trainables);
+        for t in trainables.iter_mut() {
+            let device = t.device.clone();
+            t.values = GpuBuffer::zeros_f32(&device, 1)?;
+        }
+        Ok(())
+    }
+
+    /// Materialize every ZeRO-3 parameter from the local shard (the full flat
+    /// range). Useful for inspection / export after the step's
+    /// `zero3_reshard_all` has stubbed the buffers back down.
+    pub fn zero3_gather_all(&mut self) -> Result<()> {
+        anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
+        let total = self.zero3_layout.total();
+        let mut ring = std::mem::replace(&mut self.zero3_ring, None);
+        self.zero3_gather_chunk(ring.as_mut(), &(0..total))?;
+        self.zero3_ring = ring;
+        Ok(())
+    }
+
+    /// Install the ring transport and gather budget for ZeRO-3. The ring is
+    /// used by [`Self::zero3_gather_chunk`] and [`Self::zero3_reshard_chunk`].
+    pub fn set_zero3_ring_and_chunk_bytes(
+        &mut self,
+        ring: crate::distributed::RingTransport,
+        chunk_bytes: usize,
+    ) -> Result<()> {
+        anyhow::ensure!(chunk_bytes >= 4, "zero3 chunk_bytes must be >= 4");
+        self.zero3_ring = Some(ring);
+        self.zero3_chunk_bytes = chunk_bytes;
         Ok(())
     }
 
@@ -81171,6 +81221,21 @@ impl VulkanTransformer {
         commands.upload_u32(&self.targets, targets)?;
         commands.upload_f32(&self.attention_mask, attention_mask)?;
         commands.upload_f32(&self.loss_weights, loss_weights)?;
+        // ZeRO-3: materialize the non-layer prefix BEFORE the embedding forward
+        // is recorded below. The prefix holds position_embedding, embedding_norm,
+        // lm_head, final_norm and the attention biases; the embedding forward
+        // reads position_embedding + embedding_norm, and the terminal logits read
+        // lm_head + final_norm. The shared token embedding is NOT sharded (kept
+        // full). Layer weights are gathered chunk-by-chunk inside the layer loop
+        // (below) and kept materialized through backward.
+        if self.zero3_enabled {
+            let layer_ranges = self.zero3_layer_flat_ranges()?;
+            let layer_total: usize = layer_ranges.iter().map(|r| r.len()).sum();
+            let non_layer = self.zero3_layout.total() - layer_total;
+            let mut ring = std::mem::replace(&mut self.zero3_ring, None);
+            self.zero3_gather_chunk(ring.as_mut(), &(0..non_layer))?;
+            self.zero3_ring = ring;
+        }
         if encoder_seq_len > 0 {
             commands.upload_f32(
                 self.encoder_hidden
@@ -81330,23 +81395,27 @@ impl VulkanTransformer {
             } else {
                 &self.token_embedding_output
             };
-        let token_embedding_source = if let Some(frontend) = self
+        // ZeRO-3: keep `token_embedding_source` as an owned `GpuBuffer` (cheap
+        // Arc clone) so no `&self` borrow persists into the layer loop. The
+        // zero3 gather/reshard calls need `&mut self`.
+        let token_embedding_source: GpuBuffer = if let Some(frontend) = self
             .roc_bert_embedding_frontend
             .as_ref()
             .filter(|frontend| frontend.concat_input)
         {
-            frontend.record_concat_forward(
+            let out = frontend.record_concat_forward(
                 &mut commands,
                 &self.kernels,
                 token_embedding_source,
                 input_shape_ids,
                 input_pronunciation_ids,
                 self.rows,
-            )?
+            )?;
+            out.clone()
         } else {
-            token_embedding_source
+            token_embedding_source.clone()
         };
-        let token_embedding_source = if self
+        let token_embedding_source: GpuBuffer = if self
             .config
             .architecture
             .token_scale_before_embedding_composition()
@@ -81358,11 +81427,11 @@ impl VulkanTransformer {
             };
             self.kernels.scale_copy.record_dispatch(
                 &mut commands,
-                &[token_embedding_source, &self.embedding_dropout_output],
+                &[&token_embedding_source, &self.embedding_dropout_output],
                 bytemuck::bytes_of(&scale_push),
                 [div_ceil_u32(self.rows * embedding_size, 256), 1, 1],
             )?;
-            &self.embedding_dropout_output
+            self.embedding_dropout_output.clone()
         } else {
             token_embedding_source
         };
@@ -81409,7 +81478,7 @@ impl VulkanTransformer {
                             self.kernels.roberta_position_add.record_dispatch(
                                 &mut commands,
                                 &[
-                                    token_embedding_source,
+                                    &token_embedding_source,
                                     &position_embedding.values,
                                     &self.token_ids,
                                     &self.embedding_composed,
@@ -81438,7 +81507,7 @@ impl VulkanTransformer {
                             self.kernels.offset_position_add.record_dispatch(
                                 &mut commands,
                                 &[
-                                    token_embedding_source,
+                                    &token_embedding_source,
                                     &position_embedding.values,
                                     &self.embedding_composed,
                                 ],
@@ -81459,7 +81528,7 @@ impl VulkanTransformer {
                             self.kernels.position_add.record_dispatch(
                                 &mut commands,
                                 &[
-                                    token_embedding_source,
+                                    &token_embedding_source,
                                     &position_embedding.values,
                                     &self.embedding_composed,
                                 ],
@@ -81473,7 +81542,7 @@ impl VulkanTransformer {
                         }
                         &self.embedding_composed
                     } else {
-                        token_embedding_source
+                        &token_embedding_source
                     };
                 let norm_input = if token_type_stream_active {
                     record_add(
@@ -81565,7 +81634,7 @@ impl VulkanTransformer {
                 self.kernels.roberta_position_add.record_dispatch(
                     &mut commands,
                     &[
-                        token_embedding_source,
+                        &token_embedding_source,
                         &position_embedding.values,
                         &self.token_ids,
                         &self.input_hidden,
@@ -81627,13 +81696,13 @@ impl VulkanTransformer {
                         embedding_project.record_forward(
                             &mut commands,
                             &self.kernels,
-                            token_embedding_source,
+                            &token_embedding_source,
                             &self.input_hidden_dropout,
                             self.rows,
                         )?;
                         &self.input_hidden_dropout
                     } else {
-                        token_embedding_source
+                        &token_embedding_source
                     };
                 let position_push = OptPositionPush {
                     batch_size: self.batch_size as u32,
@@ -81687,7 +81756,7 @@ impl VulkanTransformer {
             };
             self.kernels.scale_copy.record_dispatch(
                 &mut commands,
-                &[token_embedding_source, &self.input_hidden],
+                &[&token_embedding_source, &self.input_hidden],
                 bytemuck::bytes_of(&copy_push),
                 [div_ceil_u32(self.rows * self.config.hidden_size, 256), 1, 1],
             )?;
@@ -81756,17 +81825,21 @@ impl VulkanTransformer {
             )?;
         }
 
-        let layer0_standard_input =
+        // ZeRO-3: clone to an owned GpuBuffer so the `&self` borrow ends before
+        // the layer loop's `&mut self` zero3 gather calls.
+        let layer0_standard_input: GpuBuffer =
             if self.config.architecture == VulkanTransformerArchitecture::Esm {
-                &self.embedding_dropout_output
+                self.embedding_dropout_output.clone()
             } else if self.config.embedding_dropout > 0.0
                 && self.embedding_project.is_none()
                 && !self.config.architecture.embedding_dropout_before_norm()
             {
-                &self.input_hidden_dropout
+                self.input_hidden_dropout.clone()
             } else {
-                &self.input_hidden
+                self.input_hidden.clone()
             };
+        // ZeRO-3: clone the hyper buffers to owned GpuBuffer so the `&self`
+        // borrow ends before the layer loop's `&mut self` zero3 gather calls.
         let deepseek_v4_initial_input = if let (Some(hc_mult), Some(hyper)) = (
             self.deepseek_v4_hyper_head
                 .as_ref()
@@ -81781,7 +81854,7 @@ impl VulkanTransformer {
             };
             self.kernels.qwen4_repeat_streams.record_dispatch(
                 &mut commands,
-                &[layer0_standard_input, hyper],
+                &[&layer0_standard_input, hyper],
                 bytemuck::bytes_of(&push),
                 [
                     div_ceil_u32(self.rows * self.config.hidden_size * hc_mult, 256),
@@ -81789,7 +81862,7 @@ impl VulkanTransformer {
                     1,
                 ],
             )?;
-            Some(hyper)
+            Some(hyper.clone())
         } else {
             None
         };
@@ -81804,7 +81877,7 @@ impl VulkanTransformer {
             };
             self.kernels.qwen4_repeat_streams.record_dispatch(
                 &mut commands,
-                &[layer0_standard_input, hyper],
+                &[&layer0_standard_input, hyper],
                 bytemuck::bytes_of(&push),
                 [
                     div_ceil_u32(self.rows * self.config.hidden_size * mixer.hc_count, 256),
@@ -81812,19 +81885,69 @@ impl VulkanTransformer {
                     1,
                 ],
             )?;
-            Some(hyper)
+            Some(hyper.clone())
         } else {
             None
         };
 
-        for layer_index in 0..self.layers.len() {
-            let input = if layer_index == 0 {
-                deepseek_v4_initial_input
-                    .or(qwen4_initial_input)
-                    .unwrap_or(layer0_standard_input)
+        // Helper: compute the layer-0 input without moving the owned Options.
+        // Used by both the forward and backward layer loops.
+        let layer0_input = |ds: &Option<GpuBuffer>, qw: &Option<GpuBuffer>, l0: &GpuBuffer| -> GpuBuffer {
+            ds.as_ref()
+                .or_else(|| qw.as_ref())
+                .unwrap_or(l0)
+                .clone()
+        };
+
+        // ZeRO-3 chunked forward: gather layer weights chunk-by-chunk inside
+        // the layer loop. Each chunk is gathered just before its layers are
+        // recorded, and (per the keep-all-through-backward design) is NOT
+        // resharded here; the whole set is resharded once after the optimizer.
+        // The backward re-binds these weight handles, so they must stay live.
+        let zero3_layer_flat_ranges: Vec<std::ops::Range<usize>> = if self.zero3_enabled {
+            self.zero3_layer_flat_ranges()?
+        } else {
+            Vec::new()
+        };
+        let zero3_layer_chunks: Vec<(usize, usize)> = if self.zero3_enabled {
+            let budget_elems = self.zero3_chunk_bytes / 4;
+            let layer_sizes: Vec<usize> =
+                zero3_layer_flat_ranges.iter().map(|r| r.len()).collect();
+            if budget_elems > 0 && !layer_sizes.is_empty() {
+                crate::zero3::layer_chunks(&layer_sizes, budget_elems)
             } else {
-                self.layers[layer_index - 1].forward_output()
+                vec![(0usize, self.layers.len())]
+            }
+        } else {
+            Vec::new()
+        };
+        let mut zero3_prev_group: Option<usize> = None;
+        for layer_index in 0..self.layers.len() {
+            if self.zero3_enabled {
+                let group = zero3_layer_chunks
+                    .iter()
+                    .position(|c| layer_index >= c.0 && layer_index < c.1)
+                    .context("zero3 layer not in any chunk group")?;
+                if Some(group) != zero3_prev_group {
+                    let (a, b) = zero3_layer_chunks[group];
+                    let flat_range = zero3_layer_flat_ranges[a].start
+                        ..zero3_layer_flat_ranges[b - 1].end;
+                    let mut ring = std::mem::replace(&mut self.zero3_ring, None);
+                    self.zero3_gather_chunk(ring.as_mut(), &flat_range)?;
+                    self.zero3_ring = ring;
+                    zero3_prev_group = Some(group);
+                }
+            }
+            let input: GpuBuffer = if layer_index == 0 {
+                layer0_input(
+                    &deepseek_v4_initial_input,
+                    &qwen4_initial_input,
+                    &layer0_standard_input,
+                )
+            } else {
+                self.layers[layer_index - 1].forward_output().clone()
             };
+            let input = &input;
             if active_layers[layer_index] {
                 self.layers[layer_index].prepare_qwen4_ple_embeddings(
                     &mut commands,
@@ -82378,13 +82501,16 @@ impl VulkanTransformer {
         };
 
         for layer_index in (0..self.layers.len()).rev() {
-            let input = if layer_index == 0 {
-                deepseek_v4_initial_input
-                    .or(qwen4_initial_input)
-                    .unwrap_or(layer0_standard_input)
+            let input: GpuBuffer = if layer_index == 0 {
+                layer0_input(
+                    &deepseek_v4_initial_input,
+                    &qwen4_initial_input,
+                    &layer0_standard_input,
+                )
             } else {
-                self.layers[layer_index - 1].forward_output()
+                self.layers[layer_index - 1].forward_output().clone()
             };
+            let input = &input;
             let grad_output = if layer_index + 1 == self.layers.len() {
                 kimi_final_prefix_grad
                     .or(self.deepseek_v4_grad_final_hyper
@@ -83230,6 +83356,13 @@ impl VulkanTransformer {
                 .context("chunked offload store is missing")?;
             self.run_chunked_optimizer(&mut *store, next_step, hyper)?;
             self.chunked_offload_store = Some(store);
+        }
+        // ZeRO-3: the optimizer (record_step above) wrote the updated values
+        // into the full materialized buffers. Copy this rank's slice back into
+        // the owned shard and stub every full buffer, so the next step's
+        // gathers start from the freshly-optimized shard.
+        if self.zero3_enabled {
+            self.zero3_reshard_all()?;
         }
         Ok(VulkanTransformerStepResult {
             loss,
@@ -130108,6 +130241,73 @@ mod tests {
             wide,
             "log-softmax cross-entropy module must follow aten_vector_width()"
         );
+        Ok(())
+    }
+/// Phase 3 single-rank parity: enabling ZeRO-3 sharding with world=1 and
+    /// running train_step must produce bit-identical losses and parameter
+    /// values as the un-sharded path. This exercises the per-step gather
+    /// (before the embedding forward) and the post-optimizer reshard
+    /// round-trip without any network.
+    #[test]
+    fn zero3_single_rank_train_step_parity() -> Result<()> {
+        let device = VulkanDevice::new()?;
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        let targets = [2, 3, 4, 5, 6, 7, 8, 9];
+        let mask = [1.0f32; 8];
+        let hyper = AdamWHyperParams {
+            lr: 0.001,
+            eps: 0.001,
+            weight_decay: 0.01,
+            ..Default::default()
+        };
+
+        // Helper: flatten every trainable parameter into one vector.
+        let flatten = |g: &mut VulkanTransformer| -> Result<Vec<f32>> {
+            let mut flat = Vec::new();
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            g.collect_trainables(&mut trainables);
+            for t in trainables.iter() {
+                flat.extend_from_slice(&t.values.read_f32(t.len)?);
+            }
+            Ok(flat)
+        };
+
+        // Baseline: un-sharded training for 3 steps.
+        let mut baseline = tiny_gpt2_vulkan_graph(device.clone())?;
+        let mut base_losses = Vec::new();
+        for _ in 0..3 {
+            let r = baseline.train_step(&ids, &targets, &mask, &mask, hyper)?;
+            base_losses.push(r.loss);
+        }
+        let base_params = flatten(&mut baseline)?;
+
+        // ZeRO-3: shard with world=1, run the same 3 steps. Force a small
+        // chunk budget so the layer weights are gathered in multiple chunks
+        // (the tiny graph has 2 layers; 256 elements = 1 KB per chunk splits
+        // them across several groups).
+        let mut z3 = tiny_gpt2_vulkan_graph(device.clone())?;
+        let total = z3.init_zero3(0, 1)?;
+        assert!(total > 0, "tiny graph must have shardable params");
+        z3.zero3_chunk_bytes = 256 * 4;
+        // The initial gather must reproduce the baseline's initial params.
+        z3.zero3_gather_all()?;
+        let pre_params = z3.parameter_values()?;
+        let fresh = tiny_gpt2_vulkan_graph(device.clone())?;
+        let fresh_params = fresh.parameter_values()?;
+        assert_eq!(fresh_params, pre_params, "zero3 gather must reproduce initial params");
+
+        let mut z3_losses = Vec::new();
+        for _ in 0..3 {
+            let r = z3.train_step(&ids, &targets, &mask, &mask, hyper)?;
+            z3_losses.push(r.loss);
+        }
+        // Re-materialize all params (the final reshard stubbed them) so we
+        // can read their values for comparison.
+        z3.zero3_gather_all()?;
+        let z3_params = flatten(&mut z3)?;
+
+        assert_eq!(base_losses, z3_losses, "zero3 losses must match baseline");
+        assert_eq!(base_params, z3_params, "zero3 params must match baseline");
         Ok(())
     }
 }

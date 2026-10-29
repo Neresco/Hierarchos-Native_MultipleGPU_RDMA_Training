@@ -186,34 +186,34 @@ owned shards per rank** to keep host RAM bounded.
   1-element stub (reusing the offload_moments stub-swap pattern); store shards in
   the `OffloadStore` (RAM/SSD). Test: 27B shards materialize on 2 GPUs without the
   54 GB host spike.
-- **Phase 3** — Chunked forward gather. ✅ helper done (`zero3::layer_chunks`;
-  `init_zero3`, `zero3_gather_chunk`, `zero3_reshard_chunk`, `read_all_values` in
-  transformer.rs). **Remaining:** restructure the train_step forward.
-  - The forward layer loop is at transformer.rs:81790; backward at 82350. Both
-    record into ONE `ComputeBatch` (`commands`, created ~81138) submitted once
-    at the end.
-  - Chunking: replace the single layer loop with
-    `for (a,b) in zero3_layer_chunks { gather_chunk(a..b); for i in a..b { record layer i forward into `commands` } commands.submit(); reshard_chunk(a..b); }`.
-    The embedding (kept full, not sharded) and final_norm/lm_head must be gathered
-    in the chunks that touch them (lm_head is sharded via collect_trainables).
-  - **Decision:** in-place conditional chunking gated by `zero3_enabled`, keeping
-    the non-ZeRO-3 path untouched. State fields added: `zero3_chunk_bytes` (gather
-    budget), `zero3_ring` (RingTransport for allgather/reduce-scatter), plus the
-    Phase 2b fields.
-  - **Exact forward loop change** (loop at 81790): before the loop, when
-    `zero3_enabled`, compute `groups = zero3::layer_chunks(layer_sizes, chunk_bytes)`
-    and `ranges = zero3_layer_flat_ranges()`. Track `cur_group`. Inside the loop,
-    when entering a layer in a new group: `commands.submit()?` (if cur_group>0),
-    `zero3_reshard_chunk(&prev_flat_range)?`, `zero3_gather_chunk(&mut
-    self.zero3_ring, &ranges[a].start..ranges[b-1].end)?`, and for cur_group>0
-    recreate `commands = ComputeBatch::new(&device)?` (cur_group 0 keeps the
-    existing `commands` that already holds the embedding setup — the embedding is
-    kept full, not sharded).
-  - **Terminal params (lm_head, final_norm, embedding_norm):** these are the
-    non-layer prefix of the flat buffer and are used AFTER the layer loop (logits
-    + cross-entropy). Gather the prefix range `[0, non_layer)` before the
-    terminal section, submit after cross-entropy, reshard. `non_layer` =
-    `zero3_total_values() - sum(ranges)`.
+- **Phase 3** — Chunked forward gather. ✅ DONE (single-rank parity verified,
+  bit-identical losses + params; multi-chunk verified). Keep-all-through-backward:
+  the prefix is gathered before the embedding forward, layer chunks are gathered
+  inside the layer loop and kept materialized (no reshard until after the
+  optimizer), then `zero3_reshard_all()` runs post-optimizer.
+  - **CRITICAL FINDING:** the prefix gather MUST happen BEFORE the embedding
+    forward is recorded. The embedding forward reads `position_embedding` and
+    `embedding_norm`, which live in the prefix and are sharded. If the gather
+    runs after the embedding forward is recorded, the forward reads the 1-elem
+    stubs left by the previous reshard, and step ≥1 diverges. (The forward
+    descriptor binds the buffer handle at record time, so a later gather that
+    swaps `t.values` does NOT retroactively update the recorded embedding
+    dispatch.)
+  - The non-layer prefix = `[0, non_layer)` where `non_layer =
+    zero3_layout.total() - sum(zero3_layer_flat_ranges)`. It is gathered once
+    before the embedding forward and kept live through the terminal logits.
+  - Layer chunks: `zero3::layer_chunks(layer_sizes, chunk_bytes/4)` groups the
+    layers; inside the layer loop, entering a new group triggers
+    `zero3_gather_chunk` on that group's flat range. Chunks are kept materialized
+    (keep-all-through-backward) so the backward re-binds them directly.
+  - `token_embedding_source`, `layer0_standard_input`, and the deepseek/qwen4
+    initial-input buffers were refactored to owned `GpuBuffer` (Arc clones) so no
+    `&self` borrow persists into the layer loop's `&mut self` gather calls; a
+    `layer0_input` helper closure serves both the forward and backward loops.
+  - **Memory note:** keep-all-through-backward means peak VRAM still holds all
+    params after the forward completes. True per-chunk memory savings (gather →
+    submit → reshard between chunks) requires the backward to re-gather, which is
+    Phase 5.
 - **Phase 4** — Full forward parity on a small model (2 GPUs, loopback): chunked
   gather forward logits must match the non-ZeRO-3 single-rank logits.
 - **Phase 5** — Backward chunked gather + `ring_reduce_scatter` of grads; verify
