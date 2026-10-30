@@ -221,9 +221,25 @@ owned shards per rank** to keep host RAM bounded.
   `zero3_two_rank_loopback_forward_parity` to transformer.rs. A small chunk budget
   (1 KB) forces the 2 tiny layers across multiple ring gathers, and both ranks match
   the un-sharded baseline loss exactly.
-- **Phase 5** — Backward chunked gather + `ring_reduce_scatter` of grads; verify
-  grad parity vs AllReduce. The backward loop (82350) needs the same chunked
-  gather/submit/reshard, then a reduce-scatter of the flat grad buffer.
+- **Phase 5 — reduce-scatter COMPLETE, backward re-gather deferred.**
+  - **Done:** `ring_reduce_scatter` refactored to take `&mut dyn RingExchange` and
+    `&mut [f32]`; added `LoopbackReduceScatter` (pre-computes the full n-rank
+    simulation so a single rank can be driven in one thread); added
+    `zero3_reduce_scatter_gradients` which reduce-scatters the shardable prefix
+    of the flat grad buffer and ÷world the owned block to match the AllReduce
+    averaging convention. Grad parity test
+    `zero3_two_rank_grad_reduce_scatter_parity` verifies each rank's reduce-scatter
+    owned slice equals the corresponding block of a full AllReduce.
+  - **Deferred (5b):** backward chunked gather — reshard weights after forward,
+    re-gather per chunk during backward — requires splitting the single
+    ComputeBatch into forward-submit + per-chunk backward-submit. This is the VRAM
+    win for 27B (currently keep-all-through-backward holds all weights). High
+    risk in the 130k-line train_step; do as a focused sub-task. The reduce-scatter
+    primitive is wired into the train step by Phase 6 (sharded optimizer).
+  - **Note:** `zero3_reduce_scatter_gradients` is a standalone primitive (only
+    called by the parity test) — it is NOT yet wired into `train_step`, because
+    the current optimizer steps all params and would use stale grads for
+    non-owned blocks. Phase 6 wires it in alongside the sharded optimizer.
 - **Phase 6** — Sharded optimizer over owned slices + moment offload; verify step
   parity vs single-rank AllReduce on a small model.
 - **Phase 7** — Offload grad/moment shards to RAM/SSD; VRAM accounting.

@@ -1061,10 +1061,10 @@ pub fn reduce_scatter_owned_block(rank: usize, world_size: usize) -> usize {
 /// redundant backward producing the full gradient, and reduce-scatter leaves
 /// each rank with only its owned slice of the summed gradient.
 pub fn ring_reduce_scatter(
-    transport: &mut RingTransport,
+    transport: &mut dyn RingExchange,
     rank: usize,
     world_size: usize,
-    data: &mut Vec<f32>,
+    data: &mut [f32],
 ) -> anyhow::Result<()> {
     let n = world_size;
     anyhow::ensure!(n >= 2, "ring reduce-scatter needs >= 2 ranks");
@@ -1081,12 +1081,7 @@ pub fn ring_reduce_scatter(
         let recv_b = modn(rank as isize - s as isize - 1);
         let sr = range_of(send_b);
         let rr = range_of(recv_b);
-        let received = exchange_blocks(
-            &mut transport.send_to_successor,
-            &mut transport.recv_from_predecessor,
-            &data[sr],
-            rr.len(),
-        )?;
+        let received = transport.exchange(&data[sr], rr.len())?;
         for (a, b) in data[rr].iter_mut().zip(received.iter()) {
             *a = *a + b;
         }
@@ -1323,6 +1318,92 @@ impl RingExchange for LoopbackRingExchange {
     }
 }
 
+/// In-memory loopback for a single-rank-driven [`ring_reduce_scatter`].
+///
+/// A ring reduce-scatter is a CONCURRENT multi-rank reduce: at each step every
+/// rank sends one block to its successor and accumulates the predecessor's
+/// block, so a rank's later received values depend on the accumulation that
+/// happened on OTHER ranks at earlier steps. To drive one rank in a single
+/// thread without real peers, this pre-computes the full n-rank simulation up
+/// front, logging what each rank sent and received at every step. When `rank`
+/// calls [`RingExchange::exchange`], it validates the send against the logged
+/// send and returns the logged receive, so the caller's buffer state tracks the
+/// real ring exactly.
+pub struct LoopbackReduceScatter {
+    rank: usize,
+    n: usize,
+    step: usize,
+    /// `sent[r][s]` = what rank r sends at step s (for validation).
+    sent: Vec<Vec<Vec<f32>>>,
+    /// `received[r][s]` = what rank r receives at step s (to return).
+    received: Vec<Vec<Vec<f32>>>,
+}
+
+impl LoopbackReduceScatter {
+    /// `buffers[r]` is rank r's initial full buffer (e.g. its local gradient).
+    pub fn new(rank: usize, buffers: Vec<Vec<f32>>) -> Self {
+        let n = buffers.len();
+        assert!(n >= 2, "reduce-scatter needs >= 2 ranks");
+        // Run the full multi-rank simulation to log sends/receives per step.
+        let mut sim = buffers;
+        let total = sim[0].len();
+        let bs = (total + n - 1) / n;
+        let range_of = |b: usize| (b * bs)..(b * bs + bs).min(total);
+        let modn = |x: isize| (((x % n as isize) + n as isize) % n as isize) as usize;
+        let mut sent: Vec<Vec<Vec<f32>>> = vec![Vec::new(); n];
+        let mut received: Vec<Vec<Vec<f32>>> = vec![Vec::new(); n];
+        for s in 0..n - 1 {
+            let mut recv_bufs: Vec<Vec<f32>> = vec![vec![0.0; total]; n];
+            for r in 0..n {
+                let send_b = modn(r as isize - s as isize);
+                let sr = range_of(send_b);
+                sent[r].push(sim[r][sr.clone()].to_vec());
+                let succ = (r + 1) % n;
+                // The successor receives rank r's send_b into its own recv_b,
+                // which equals send_b ((succ - s - 1) mod n == (r - s) mod n).
+                for e in 0..sr.len() {
+                    recv_bufs[succ][sr.start + e] = sim[r][sr.start + e];
+                }
+            }
+            for r in 0..n {
+                let recv_b = modn(r as isize - s as isize - 1);
+                let rr = range_of(recv_b);
+                received[r].push(recv_bufs[r][rr.clone()].to_vec());
+                for e in 0..rr.len() {
+                    sim[r][rr.start + e] += recv_bufs[r][rr.start + e];
+                }
+            }
+        }
+        Self {
+            rank,
+            n,
+            step: 0,
+            sent,
+            received,
+        }
+    }
+}
+
+impl RingExchange for LoopbackReduceScatter {
+    fn exchange(&mut self, send_data: &[f32], recv_len: usize) -> anyhow::Result<Vec<f32>> {
+        let s = self.step;
+        self.step += 1;
+        anyhow::ensure!(s < self.n - 1, "reduce-scatter step overflow");
+        // Validate this rank's send against the logged send.
+        anyhow::ensure!(
+            send_data == &self.sent[self.rank][s],
+            "loopback reduce-scatter send mismatch at step {s}"
+        );
+        let received = self.received[self.rank][s].clone();
+        anyhow::ensure!(
+            received.len() == recv_len,
+            "loopback reduce-scatter recv len {} != expected {recv_len}",
+            received.len()
+        );
+        Ok(received)
+    }
+}
+
 /// Allgather a list of small (rank, json) items around the ring over TCP.
 /// Every rank starts with its own item; after n-1 steps each rank holds all n,
 /// sorted by rank for canonical merge order.
@@ -1461,6 +1542,37 @@ mod tests {
                         "n={n} rank {r} owned block {owned} elem {e}: {} != {}",
                         buffers[r][owned * bs + e],
                         expected
+                    );
+                }
+            }
+        }
+    }
+
+    /// Drive [`ring_reduce_scatter`] for every rank through an in-memory
+    /// [`LoopbackReduceScatter`], then confirm each rank's owned block equals
+    /// the world sum (matching the pure-rotation reference).
+    #[test]
+    fn loopback_reduce_scatter_reduces_owned_block() {
+        for &n in &[2usize, 3, 4, 7] {
+            let bs = 5usize;
+            let total = n * bs;
+            let value = |r: usize, b: usize, e: usize| (r * 1000 + b * 10 + e) as f32;
+            let initial: Vec<Vec<f32>> = (0..n)
+                .map(|r| (0..total).map(|i| value(r, i / bs, i % bs)).collect())
+                .collect();
+            for rank in 0..n {
+                // Each rank drives the reduce-scatter against a fresh loopback
+                // seeded with every rank's initial buffer.
+                let mut ring = LoopbackReduceScatter::new(rank, initial.clone());
+                let mut data = initial[rank].clone();
+                ring_reduce_scatter(&mut ring, rank, n, &mut data).unwrap();
+                let owned = reduce_scatter_owned_block(rank, n);
+                for e in 0..bs {
+                    let expected: f32 = (0..n).map(|rr| value(rr, owned, e)).sum();
+                    assert!(
+                        (data[owned * bs + e] - expected).abs() < 1e-3,
+                        "n={n} rank {rank} owned {owned} elem {e}: {} != {expected}",
+                        data[owned * bs + e]
                     );
                 }
             }

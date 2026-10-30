@@ -64400,6 +64400,50 @@ impl VulkanTransformer {
         Ok(())
     }
 
+    /// Reduce-scatter the ZeRO-3 shardable portion of a flat gradient buffer so
+    /// each rank is left with the fully-reduced (summed) gradient for its owned
+    /// block, averaged by `world_size` to match the distributed AllReduce
+    /// convention. The flat buffer must be laid out as `read_all_gradients`:
+    /// the `collect_trainables` gradients first (length [`Self::zero3_total_values`])
+    /// followed by the shared embedding's gradient. Only the shardable prefix is
+    /// reduce-scattered; the shared embedding stays full on every rank.
+    ///
+    /// After the call, `grads[owned]` holds the world sum (÷ world) for the
+    /// block [`crate::distributed::reduce_scatter_owned_block`]; all other
+    /// shardable elements are stale. Returns that owned block range.
+    pub fn zero3_reduce_scatter_gradients(
+        &mut self,
+        grads: &mut Vec<f32>,
+    ) -> Result<std::ops::Range<usize>> {
+        anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
+        let world = self.zero3_world;
+        anyhow::ensure!(world > 1, "zero3 reduce-scatter needs world > 1");
+        let total = self.zero3_layout.total();
+        anyhow::ensure!(
+            grads.len() >= total,
+            "gradient length {} < zero3 shardable total {}",
+            grads.len(),
+            total
+        );
+        let shardable = &mut grads[..total];
+        let mut ring_box = std::mem::replace(&mut self.zero3_ring, None)
+            .context("zero3 reduce-scatter requires a ring exchange")?;
+        {
+            let ring: &mut dyn crate::distributed::RingExchange = &mut *ring_box;
+            crate::distributed::ring_reduce_scatter(ring, self.zero3_rank, world, shardable)?;
+        }
+        self.zero3_ring = Some(ring_box);
+        // Reduce-scatter produces the world sum; divide the owned block by
+        // world to match the averaging convention of the distributed AllReduce.
+        let owned = crate::distributed::reduce_scatter_owned_block(self.zero3_rank, world);
+        let bs = (total + world - 1) / world;
+        let owned_range = (owned * bs)..(owned * bs + bs).min(total);
+        for g in &mut grads[owned_range.clone()] {
+            *g /= world as f32;
+        }
+        Ok(owned_range)
+    }
+
     /// Install the ring exchange and gather budget for ZeRO-3. The ring is used
     /// by [`Self::zero3_gather_chunk`] and [`Self::zero3_reshard_chunk`]. Tests
     /// inject an in-memory [`crate::distributed::LoopbackRingExchange`] here to
@@ -130388,6 +130432,93 @@ mod tests {
         assert_eq!(rank_losses[0], base_loss, "rank 0 loss must match single-rank baseline");
         assert_eq!(rank_losses[1], base_loss, "rank 1 loss must match single-rank baseline");
         assert_eq!(rank_losses[0], rank_losses[1], "both ranks must agree");
+        Ok(())
+    }
+
+    /// Phase 5 two-rank loopback grad reduce-scatter parity: with world=2 and
+    /// an in-memory [`crate::distributed::LoopbackReduceScatter`], the
+    /// [`zero3_reduce_scatter_gradients`](Self::zero3_reduce_scatter_gradients)
+    /// owned block must equal the corresponding block of a full AllReduce of
+    /// the same local gradients. Each rank runs a chunked-gather train_step
+    /// (identical params + inputs => identical local grad), then we reduce-scatter
+    /// that grad and compare its owned slice against the AllReduce reference.
+    #[test]
+    fn zero3_two_rank_grad_reduce_scatter_parity() -> Result<()> {
+        use crate::distributed::{LoopbackReduceScatter, LoopbackRingExchange, reduce_scatter_owned_block};
+        let device = VulkanDevice::new()?;
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        let targets = [2, 3, 4, 5, 6, 7, 8, 9];
+        let mask = [1.0f32; 8];
+        let hyper = AdamWHyperParams {
+            lr: 0.001,
+            eps: 0.001,
+            weight_decay: 0.01,
+            ..Default::default()
+        };
+        let world = 2usize;
+
+        // Baseline: seed the loopbacks and capture the per-owner ranges.
+        let mut baseline = tiny_gpt2_vulkan_graph(device.clone())?;
+        let total = baseline.zero3_total_values();
+        assert!(total > 0, "tiny graph must have shardable params");
+        let full: Vec<f32> = baseline
+            .read_all_values()?
+            .into_iter()
+            .take(total)
+            .collect();
+        let owner_ranges = crate::zero3::ShardLayout::new(total, world).segments();
+
+        // Run train_step on every rank (forward chunked gather via loopback);
+        // collect each rank's local gradient.
+        let mut local_grads: Vec<Vec<f32>> = Vec::with_capacity(world);
+        for rank in 0..world {
+            let mut r = tiny_gpt2_vulkan_graph(device.clone())?;
+            r.init_zero3(rank, world)?;
+            let fwd = LoopbackRingExchange::new(rank, world, owner_ranges.clone(), full.clone());
+            r.set_zero3_ring_and_chunk_bytes(Box::new(fwd), 256 * 4)?;
+            r.train_step(&ids, &targets, &mask, &mask, hyper)?;
+            local_grads.push(r.read_all_gradients()?);
+        }
+
+        // AllReduce reference: sum of every rank's local grad, ÷ world (the
+        // averaging convention of the distributed AllReduce path).
+        let mut ref_grad = local_grads[0].clone();
+        for g in local_grads.iter().skip(1) {
+            for (a, b) in ref_grad.iter_mut().zip(g.iter()) {
+                *a += b;
+            }
+        }
+        for a in ref_grad.iter_mut() {
+            *a /= world as f32;
+        }
+
+        // For each rank, reduce-scatter its local grad through the loopback and
+        // verify the owned block matches the AllReduce reference's block. The
+        // loopback is seeded with the shardable prefix only (length `total`),
+        // matching what `zero3_reduce_scatter_gradients` reduce-scatters.
+        let shardable_grads: Vec<Vec<f32>> =
+            local_grads.iter().map(|g| g[..total].to_vec()).collect();
+        for rank in 0..world {
+            let mut r = tiny_gpt2_vulkan_graph(device.clone())?;
+            r.init_zero3(rank, world)?;
+            let rs = LoopbackReduceScatter::new(rank, shardable_grads.clone());
+            r.set_zero3_ring_and_chunk_bytes(Box::new(rs), 256 * 4)?;
+            let mut grads = local_grads[rank].clone();
+            let owned = r.zero3_reduce_scatter_gradients(&mut grads)?;
+            let owned_block = reduce_scatter_owned_block(rank, world);
+            let bs = (total + world - 1) / world;
+            let expected = (owned_block * bs)..(owned_block * bs + bs).min(total);
+            assert_eq!(
+                owned, expected,
+                "rank {rank} owned range must match the reduce-scatter block"
+            );
+            for (a, b) in grads[owned.clone()].iter().zip(ref_grad[owned].iter()) {
+                assert_eq!(
+                    a, b,
+                    "rank {rank} reduce-scatter owned slice must equal the AllReduce block"
+                );
+            }
+        }
         Ok(())
     }
 }
