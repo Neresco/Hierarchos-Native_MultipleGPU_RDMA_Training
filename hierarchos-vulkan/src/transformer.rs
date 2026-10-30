@@ -63886,8 +63886,9 @@ pub struct VulkanTransformer {
     zero3_shard: Vec<f32>,
     /// Gather budget in bytes per forward/backward chunk (bound by free VRAM).
     zero3_chunk_bytes: usize,
-    /// Ring transport used for the ZeRO-3 all-gather / reduce-scatter.
-    zero3_ring: Option<crate::distributed::RingTransport>,
+    /// Ring exchange used for the ZeRO-3 all-gather / reduce-scatter. A box of
+    /// the trait so tests can inject an in-memory loopback for world>1 parity.
+    zero3_ring: Option<Box<dyn crate::distributed::RingExchange>>,
     dropout_seed: u32,
     layerdrop: f32,
     lora_configs: BTreeMap<String, VulkanTransformerLoraConfig>,
@@ -64281,7 +64282,7 @@ impl VulkanTransformer {
     /// [`Self::zero3_reshard_chunk`] when done.
     pub fn zero3_gather_chunk(
         &mut self,
-        ring: Option<&mut crate::distributed::RingTransport>,
+        ring: Option<&mut Box<dyn crate::distributed::RingExchange>>,
         chunk: &std::ops::Range<usize>,
     ) -> Result<()> {
         anyhow::ensure!(self.zero3_enabled, "zero3 not initialized");
@@ -64289,35 +64290,50 @@ impl VulkanTransformer {
         let world = self.zero3_world;
         let chunk_len = chunk.end - chunk.start;
         // Build the per-owner segments (relative to the chunk) for this chunk.
+        // A rank whose slice falls entirely outside the chunk contributes an
+        // empty segment; the allgather still runs so that rank's data (none) and
+        // its peers' data are exchanged correctly.
         let mut segments = Vec::with_capacity(world);
         let mut cursor = 0usize;
         for r in 0..world {
             let sr = layout.slice_range(r);
             let lo = sr.start.max(chunk.start);
             let hi = sr.end.min(chunk.end);
-            anyhow::ensure!(
-                lo <= hi && lo >= cursor,
-                "zero3 gather segments are not contiguous"
-            );
-            segments.push(cursor..(hi - chunk.start));
-            cursor = hi - chunk.start;
+            if lo < hi {
+                anyhow::ensure!(
+                    lo - chunk.start >= cursor,
+                    "zero3 gather segments are not contiguous"
+                );
+                segments.push(cursor..(hi - chunk.start));
+                cursor = hi - chunk.start;
+            } else {
+                segments.push(cursor..cursor);
+            }
         }
         anyhow::ensure!(
             cursor == chunk_len,
             "zero3 gather segments do not cover the chunk"
         );
-        // Each rank fills its own segment from its stored slice.
+        // Each rank fills its own segment from its stored slice. If this rank's
+        // slice does not intersect the chunk, its segment is empty and nothing
+        // is copied (the allgather below still runs so peers' data is exchanged).
         let mut full_chunk = vec![0f32; chunk_len];
         let my_seg = segments[self.zero3_rank].clone();
-        let my_flat_start = chunk.start + my_seg.start;
-        let my_range = layout.slice_range(self.zero3_rank);
-        // The rank's stored slice covers my_range of the flat buffer; the part
-        // inside this chunk is [my_flat_start, my_flat_start + my_seg.len()).
-        let off = my_flat_start - my_range.start;
-        full_chunk[my_seg.clone()].copy_from_slice(&self.zero3_shard[off..off + my_seg.len()]);
+        if !my_seg.is_empty() {
+            let my_flat_start = chunk.start + my_seg.start;
+            let my_range = layout.slice_range(self.zero3_rank);
+            // The rank's stored slice covers my_range of the flat buffer; the
+            // part inside this chunk is [my_flat_start, my_flat_start + len).
+            let off = my_flat_start - my_range.start;
+            full_chunk[my_seg.clone()].copy_from_slice(&self.zero3_shard[off..off + my_seg.len()]);
+        }
         if world > 1 {
-            let ring = ring
+            let ring_box = ring
                 .context("zero3 world > 1 requires a ring transport")?;
+            let ring: &mut dyn crate::distributed::RingExchange = &mut **ring_box;
+            // Tell a stateful (loopback) transport the absolute chunk range so
+            // it can map per-owner segments back into the full buffer.
+            ring.begin_chunk(chunk);
             crate::distributed::ring_allgather_sharded(ring, self.zero3_rank, world, &segments, &mut full_chunk)?;
         }
         // Materialize every parameter intersecting the chunk.
@@ -64384,11 +64400,13 @@ impl VulkanTransformer {
         Ok(())
     }
 
-    /// Install the ring transport and gather budget for ZeRO-3. The ring is
-    /// used by [`Self::zero3_gather_chunk`] and [`Self::zero3_reshard_chunk`].
+    /// Install the ring exchange and gather budget for ZeRO-3. The ring is used
+    /// by [`Self::zero3_gather_chunk`] and [`Self::zero3_reshard_chunk`]. Tests
+    /// inject an in-memory [`crate::distributed::LoopbackRingExchange`] here to
+    /// drive world>1 gather/forward parity in a single process.
     pub fn set_zero3_ring_and_chunk_bytes(
         &mut self,
-        ring: crate::distributed::RingTransport,
+        ring: Box<dyn crate::distributed::RingExchange>,
         chunk_bytes: usize,
     ) -> Result<()> {
         anyhow::ensure!(chunk_bytes >= 4, "zero3 chunk_bytes must be >= 4");
@@ -130308,6 +130326,68 @@ mod tests {
 
         assert_eq!(base_losses, z3_losses, "zero3 losses must match baseline");
         assert_eq!(base_params, z3_params, "zero3 params must match baseline");
+        Ok(())
+    }
+
+    /// Phase 4 two-rank loopback forward parity: with world=2 and an in-memory
+    /// [`crate::distributed::LoopbackRingExchange`], the chunked ring-allgather
+    /// forward must produce the same loss (hence the same logits) as the
+    /// un-sharded single-rank path. This exercises the real
+    /// `ring_allgather_sharded` rotation on each rank's gather: rank r holds
+    /// only slice r, and the loopback serves it its peer's slice, so the
+    /// reconstructed parameters — and therefore the forward — must match a
+    /// single rank that never sharded. A small chunk budget forces the layer
+    /// weights to be gathered in multiple chunks over the ring.
+    #[test]
+    fn zero3_two_rank_loopback_forward_parity() -> Result<()> {
+        use crate::distributed::LoopbackRingExchange;
+        let device = VulkanDevice::new()?;
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        let targets = [2, 3, 4, 5, 6, 7, 8, 9];
+        let mask = [1.0f32; 8];
+        let hyper = AdamWHyperParams {
+            lr: 0.001,
+            eps: 0.001,
+            weight_decay: 0.01,
+            ..Default::default()
+        };
+
+        // Baseline: un-sharded model. Capture its initial shardable flat params
+        // (excluding the shared embedding, which is kept full on every rank) to
+        // seed both loopback rings, and derive the per-owner ranges from the
+        // world=2 layout.
+        let mut baseline = tiny_gpt2_vulkan_graph(device.clone())?;
+        let total = baseline.zero3_total_values();
+        assert!(total > 0, "tiny graph must have shardable params");
+        let full: Vec<f32> = baseline
+            .read_all_values()?
+            .into_iter()
+            .take(total)
+            .collect();
+        let owner_ranges = crate::zero3::ShardLayout::new(total, 2).segments();
+
+        // Run the baseline forward for one step; its loss is derived from the
+        // forward logits and is the reference both ranks must match.
+        let base_loss = baseline.train_step(&ids, &targets, &mask, &mask, hyper)?.loss;
+
+        // For each rank, shard world=2 and wire a loopback ring pre-staged with
+        // the full buffer. Run one train_step; the loss must equal the baseline.
+        let mut rank_losses = Vec::new();
+        for rank in 0..2usize {
+            let mut r = tiny_gpt2_vulkan_graph(device.clone())?;
+            let got = r.init_zero3(rank, 2)?;
+            assert_eq!(got, total, "rank {rank} shard total must match baseline");
+            let loopback = LoopbackRingExchange::new(rank, 2, owner_ranges.clone(), full.clone());
+            // 256 elements = 1 KB per chunk splits the 2 tiny layers across
+            // several ring gathers, mirroring Phase 3's multi-chunk check.
+            r.set_zero3_ring_and_chunk_bytes(Box::new(loopback), 256 * 4)?;
+            let loss = r.train_step(&ids, &targets, &mask, &mask, hyper)?.loss;
+            rank_losses.push(loss);
+        }
+
+        assert_eq!(rank_losses[0], base_loss, "rank 0 loss must match single-rank baseline");
+        assert_eq!(rank_losses[1], base_loss, "rank 1 loss must match single-rank baseline");
+        assert_eq!(rank_losses[0], rank_losses[1], "both ranks must agree");
         Ok(())
     }
 }

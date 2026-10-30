@@ -1140,6 +1140,30 @@ fn ring_allgather_sharded_step(
     data[recv_range.clone()].copy_from_slice(received);
 }
 
+/// The byte-exchange primitive a ring allgather/reduce-scatter needs from its
+/// transport: send `send_data` to the successor and receive `recv_len` f32s
+/// from the predecessor. The real [`RingTransport`] forwards this to
+/// [`exchange_blocks`]; tests substitute an in-memory loopback so world>1
+/// gather/forward parity can be driven in a single process without RDMA.
+pub trait RingExchange {
+    /// Called before each allgather/reduce-scatter of a flat range, so a
+    /// stateful (loopback) transport can learn which chunk is being moved.
+    /// The real transport ignores it.
+    fn begin_chunk(&mut self, _chunk: &std::ops::Range<usize>) {}
+    fn exchange(&mut self, send_data: &[f32], recv_len: usize) -> anyhow::Result<Vec<f32>>;
+}
+
+impl RingExchange for RingTransport {
+    fn exchange(&mut self, send_data: &[f32], recv_len: usize) -> anyhow::Result<Vec<f32>> {
+        exchange_blocks(
+            &mut self.send_to_successor,
+            &mut self.recv_from_predecessor,
+            send_data,
+            recv_len,
+        )
+    }
+}
+
 /// Ring allgather of an f32 buffer split into UNEQUAL per-rank segments.
 ///
 /// `seg[r]` is the byte-range of the full buffer owned by rank r. On entry,
@@ -1153,7 +1177,7 @@ fn ring_allgather_sharded_step(
 /// in owner order (seg[0].start == 0, seg[k].end == seg[k+1].start,
 /// seg[n-1].end == data.len()).
 pub fn ring_allgather_sharded(
-    transport: &mut RingTransport,
+    transport: &mut dyn RingExchange,
     rank: usize,
     world_size: usize,
     seg: &[std::ops::Range<usize>],
@@ -1188,15 +1212,115 @@ pub fn ring_allgather_sharded(
     for s in 0..n - 1 {
         let send_owner = ring_send_owner(rank, n, s);
         let recv_len = seg[ring_recv_owner(rank, n, s)].len();
-        let received = exchange_blocks(
-            &mut transport.send_to_successor,
-            &mut transport.recv_from_predecessor,
-            &data[seg[send_owner].clone()],
-            recv_len,
-        )?;
+        let received = transport.exchange(&data[seg[send_owner].clone()], recv_len)?;
         ring_allgather_sharded_step(data, seg, rank, n, s, &received);
     }
     Ok(())
+}
+
+/// In-memory loopback ring exchange for single-process world>1 testing.
+///
+/// It pre-stages the complete flat buffer (every rank's shard combined, in
+/// layout order) and the per-owner absolute ranges, then serves each rank the
+/// exact segment the ring rotation expects it to receive. This lets a
+/// [`ring_allgather_sharded`] / ZeRO-3 gather be driven for every rank in one
+/// thread, sequentially, without RDMA or concurrency. The `send_data` each rank
+/// offers is validated against its owned segment so a wrong send fails loudly.
+pub struct LoopbackRingExchange {
+    rank: usize,
+    world: usize,
+    /// Absolute ranges in the flat buffer owned by each rank (layout slices).
+    owner_ranges: Vec<std::ops::Range<usize>>,
+    /// The complete flat buffer (all ranks' data combined).
+    full: Vec<f32>,
+    /// The chunk currently being exchanged.
+    chunk: std::ops::Range<usize>,
+    /// Current step within the chunk.
+    step: usize,
+}
+
+impl LoopbackRingExchange {
+    pub fn new(
+        rank: usize,
+        world: usize,
+        owner_ranges: Vec<std::ops::Range<usize>>,
+        full: Vec<f32>,
+    ) -> Self {
+        Self {
+            rank,
+            world,
+            owner_ranges,
+            full,
+            chunk: 0..0,
+            step: 0,
+        }
+    }
+
+    /// Per-owner segments of `chunk` relative to the chunk start, mirroring the
+    /// segment math in `zero3_gather_chunk`. A rank whose slice falls entirely
+    /// outside the chunk contributes an empty segment.
+    fn segments(&self, chunk: &std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+        let mut seg = Vec::with_capacity(self.world);
+        let mut cursor = 0usize;
+        for r in 0..self.world {
+            let sr = &self.owner_ranges[r];
+            let lo = sr.start.max(chunk.start);
+            let hi = sr.end.min(chunk.end);
+            if lo < hi {
+                assert!(
+                    lo - chunk.start >= cursor,
+                    "loopback segments not contiguous at rank {r}"
+                );
+                seg.push(cursor..(hi - chunk.start));
+                cursor = hi - chunk.start;
+            } else {
+                seg.push(cursor..cursor);
+            }
+        }
+        assert_eq!(cursor, chunk.end - chunk.start, "loopback segments must cover chunk");
+        seg
+    }
+}
+
+impl RingExchange for LoopbackRingExchange {
+    fn begin_chunk(&mut self, chunk: &std::ops::Range<usize>) {
+        self.chunk = chunk.clone();
+        self.step = 0;
+    }
+
+    fn exchange(&mut self, send_data: &[f32], recv_len: usize) -> anyhow::Result<Vec<f32>> {
+        let n = self.world;
+        anyhow::ensure!(n >= 2, "loopback ring needs >= 2 ranks");
+        let s = self.step;
+        self.step += 1;
+        let seg = self.segments(&self.chunk);
+        // Validate this rank's send against its owned segment.
+        let send_owner = ring_send_owner(self.rank, n, s);
+        let send_range = seg[send_owner].clone();
+        anyhow::ensure!(
+            send_data.len() == send_range.len(),
+            "loopback send len {} != owned seg len {}",
+            send_data.len(),
+            send_range.len()
+        );
+        let send_abs =
+            (send_range.start + self.chunk.start)..(send_range.end + self.chunk.start);
+        anyhow::ensure!(
+            send_data == &self.full[send_abs.clone()],
+            "loopback send data mismatch for owner {send_owner}"
+        );
+        // Return the segment this rank should receive.
+        let recv_owner = ring_recv_owner(self.rank, n, s);
+        let recv_range = seg[recv_owner].clone();
+        let recv_abs =
+            (recv_range.start + self.chunk.start)..(recv_range.end + self.chunk.start);
+        anyhow::ensure!(
+            recv_abs.len() == recv_len,
+            "loopback recv len {} != expected {recv_len}",
+            recv_abs.len()
+        );
+        Ok(self.full[recv_abs].to_vec())
+    }
 }
 
 /// Allgather a list of small (rank, json) items around the ring over TCP.

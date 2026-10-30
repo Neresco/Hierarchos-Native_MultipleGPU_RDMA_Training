@@ -214,8 +214,13 @@ owned shards per rank** to keep host RAM bounded.
     params after the forward completes. True per-chunk memory savings (gather →
     submit → reshard between chunks) requires the backward to re-gather, which is
     Phase 5.
-- **Phase 4** — Full forward parity on a small model (2 GPUs, loopback): chunked
-  gather forward logits must match the non-ZeRO-3 single-rank logits.
+- **Phase 4 — COMPLETE.** Full forward parity on a small model (2 GPUs, loopback):
+  chunked gather forward logits match the non-ZeRO-3 single-rank logits. Implemented
+  the `RingExchange` trait + in-memory `LoopbackRingExchange` so `ring_allgather_sharded`
+  can be driven for every rank in one process without RDMA; added
+  `zero3_two_rank_loopback_forward_parity` to transformer.rs. A small chunk budget
+  (1 KB) forces the 2 tiny layers across multiple ring gathers, and both ranks match
+  the un-sharded baseline loss exactly.
 - **Phase 5** — Backward chunked gather + `ring_reduce_scatter` of grads; verify
   grad parity vs AllReduce. The backward loop (82350) needs the same chunked
   gather/submit/reshard, then a reduce-scatter of the flat grad buffer.
