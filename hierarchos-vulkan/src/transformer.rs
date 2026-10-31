@@ -64186,15 +64186,32 @@ impl VulkanTransformer {
 
         let mut cmds = vulkan::ComputeBatch::new(&device)?;
 
+        // Determine which params overlap this rank's shard. After reduce-scatter,
+        // only the shard block holds the correct gradient for this rank; all
+        // other blocks contain stale partial sums. Non-shard params' updates are
+        // discarded by zero3_reshard_all, so skip them to save ~50% optimizer
+        // FLOPs at world=2.
+        let world = self.zero3_world;
+        let shard_range = self.zero3_layout.slice_range(self.zero3_rank);
+
         {
             let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
             self.collect_trainables(&mut trainables);
-            for t in trainables.iter() {
+            let mut cursor = 0usize;
+            for t in trainables.iter_mut() {
+                let param_start = cursor;
+                let param_end = cursor + t.len;
+                cursor = param_end;
+                // Param is steppable only if its flat range intersects the
+                // shard block. Params straddling the boundary are stepped
+                // conservatively (their non-shard portion is stale but
+                // discarded by reshard).
+                t.step_owner = param_start < shard_range.end && param_end > shard_range.start;
                 t.record_step(&mut cmds, kernels_read, next_step, hyper)?;
             }
         }
 
-        // Tied embedding / shared lm_head.
+        // Tied embedding / shared lm_head. Always stepped (not sharded).
         let tied_step = self.shared_embedding.record_step(&mut cmds, hyper)?;
         if tied_step != next_step {
             bail!(
