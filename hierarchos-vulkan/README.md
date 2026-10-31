@@ -167,6 +167,44 @@ store). In distributed mode the binary automatically gives each rank its own
 SSD file (`/tmp/offload.mmap` becomes `/tmp/offload-rank<R>.mmap`) so co-located
 ranks do not corrupt a shared file.
 
+#### ZeRO-3 sharded training
+
+Beyond the AllReduce mode, `hierarchos-vulkan-transformer-train` supports
+**ZeRO-3** (sharded data-parallel) via `--zero3`. Instead of every rank holding
+the full model and all-reducing the full gradient, the flat parameter buffer is
+sharded across ranks: each rank keeps only its `1/world` slice, gathers the
+full buffer per-chunk over the RDMA ring before the forward pass, runs the
+redundant backward, reduce-scatters the gradient so each rank owns exactly its
+slice, and steps *only* the parameters that overlap its owned slice. This
+shards both the parameter and the per-rank optimizer-state footprint to
+`1/world` of the single-GPU cost.
+
+```
+hierarchos-vulkan-transformer-train \
+  --model <model-dir-or-hf-id> --dataset <train.jsonl> --output <out> \
+  --epochs N --batch-size B --seq-len S --learning-rate LR --seed SEED \
+  --zero3 --moment-offload \
+  --offload-ssd /tmp/zero3.mmap --offload-ssd-capacity-bytes 8589934592 \
+  --world-size 6 --peer-ips IP0,IP1,...,IP5 --rdma-device rocep7s0 --rank R --device-index D
+```
+
+ZeRO-3 flags:
+
+- `--zero3` — enable sharded training. Requires `--world-size > 1`,
+  `--rank`, `--peer-ips` (one IP per rank), and `--rdma-device`. It replaces the
+  AllReduce gradient-exchanger path.
+- `--zero3-chunk-bytes N` — bytes per allgather / reduce-scatter ring chunk
+  (default 256 MiB). Smaller values lower peak VRAM at the cost of more ring
+  traffic.
+- `--moment-offload` — offload ZeRO-3 non-owned parameters' AdamW moments to
+  CPU RAM, or to SSD with `--offload-ssd` / `--offload-ssd-capacity-bytes`
+  (as with the AllReduce offload, each rank automatically gets its own
+  `-rank<R>` file). Without `--moment-offload`, owned parameters' moments stay
+  on the GPU and non-owned moments are never materialized.
+
+Like the AllReduce mode, ZeRO-3 does **not** require `--cpu-offload`; the
+sharded optimizer runs inside `train_step` after the reduce-scatter.
+
 ### Verified results (60M-param coherent-v9 model)
 
 - **Loss parity** vs single-node: distributed mean loss matches the single-node

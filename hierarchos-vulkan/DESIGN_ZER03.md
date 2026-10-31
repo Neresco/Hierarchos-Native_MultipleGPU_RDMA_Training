@@ -269,8 +269,20 @@ owned shards per rank** to keep host RAM bounded.
     (`slice_range(rank)`), which reduce-scatter never overwrites — the buggy value
     seeding only ever landed in non-shard blocks that are discarded by the sharded
     optimizer.
-- **Phase 9** — CLI/WebUI wiring (`--zero3`, `--moment-offload`), README, cleanup,
-  and a real-hardware 6-GPU 27B smoke.
+- **Phase 9** — CLI wiring + README + cleanup (DONE); real-hardware 6-GPU 27B
+  smoke (pending, needs the full cluster). CLI work: `transformer_train.rs` now
+  accepts `--zero3`, `--zero3-chunk-bytes N` (default 256 MiB), and
+  `--moment-offload`. `--zero3` is mutually exclusive with the AllReduce path and
+  requires `--world-size > 1`, `--rank`, `--peer-ips`, and `--rdma-device`. On
+  startup it calls `graph.init_zero3(rank, world)` to shard the flat parameter
+  buffer, connects the RDMA `RingTransport`, and installs it via
+  `set_zero3_ring_and_chunk_bytes(Box::new(ring), chunk_bytes)` (the real transport
+  is stateless, so — unlike the loopback test — it is set once before the train
+  loop, not per step). `--moment-offload` routes the (heap or per-rank SSD mmap)
+  store into `enable_zero3_moment_offload` instead of `enable_chunked_optimizer_offload`.
+  The `TrainingReport` now carries `zero3` and `world_size`. A dedicated README
+  subsection documents the mode and its flags. The 6-GPU/54 GB 27B hardware smoke
+  still needs the full cluster and is the only remaining Phase 9 item.
 
 Each phase builds and runs a parity test on a small model (Qwen3-0.6B) before moving
 on, so regressions are caught early.

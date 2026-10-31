@@ -68,6 +68,12 @@ struct Args {
     /// the offloaded optimizer state spills to this file via the OS page cache.
     offload_ssd_path: Option<PathBuf>,
     offload_ssd_capacity: Option<usize>,
+    /// Enable ZeRO-3 sharded data-parallel training (implies --world-size > 1).
+    zero3: bool,
+    /// Bytes per ZeRO-3 allgather/reduce-scatter ring chunk.
+    zero3_chunk_bytes: Option<usize>,
+    /// Offload ZeRO-3 non-owned optimizer moments to CPU RAM / SSD.
+    moment_offload: bool,
     rank: usize,
     world_size: usize,
     peer_ips: Vec<String>,
@@ -114,6 +120,8 @@ struct TrainingReport {
     supervised_tokens: usize,
     final_loss: f32,
     peft: bool,
+    zero3: bool,
+    world_size: usize,
     output: String,
 }
 
@@ -163,6 +171,12 @@ Training options:\n\
   --rank N --world-size N       Distributed AllReduce training (requires --cpu-offload)\n\
   --peer-ips IP1,IP2,...        One IP per rank (world-size N)\n\
   --rdma-device NAME            RDMA device (e.g. rocep7s0); required for world-size > 1\n\\
+ZeRO-3 (sharded data-parallel) options:\n\
+  --zero3                       Enable ZeRO-3 sharding; requires --rank/--world-size > 1,\n\
+                                --peer-ips and --rdma-device\n\
+  --zero3-chunk-bytes N         Bytes per allgather/reduce-scatter ring chunk (default 256 MiB)\n\
+  --moment-offload              Offload ZeRO-3 non-owned optimizer moments to CPU/SSD\n\
+                                (use --offload-ssd / --offload-ssd-capacity-bytes for SSD)\n\\
   --log-steps N                 Emit progress JSON every N updates (default: 10)\n\
   --seed N                      LoRA initialization + Transformer dropout seed (default: 42)\n\n\
 PEFT options:\n\
@@ -207,6 +221,9 @@ fn parse_args() -> Result<Args> {
         cpu_offload: false,
         offload_ssd_path: None,
         offload_ssd_capacity: None,
+        zero3: false,
+        zero3_chunk_bytes: None,
+        moment_offload: false,
         rank: 0,
         world_size: 1,
         peer_ips: Vec::new(),
@@ -318,6 +335,18 @@ fn parse_args() -> Result<Args> {
                 )?;
                 parsed.offload_ssd_capacity = Some(capacity);
             }
+            "--zero3" => {
+                parsed.zero3 = true;
+            }
+            "--zero3-chunk-bytes" => {
+                parsed.zero3_chunk_bytes = Some(parse_num(
+                    required_arg(&mut args, "--zero3-chunk-bytes")?,
+                    "--zero3-chunk-bytes",
+                )?);
+            }
+            "--moment-offload" => {
+                parsed.moment_offload = true;
+            }
             "--rank" => {
                 parsed.rank = parse_num(required_arg(&mut args, "--rank")?, "--rank")?;
             }
@@ -424,6 +453,23 @@ fn validate_args(args: &Args) -> Result<()> {
     }
     if !args.weight_decay.is_finite() || args.weight_decay < 0.0 {
         bail!("--weight-decay must be finite and non-negative");
+    }
+    if args.zero3 {
+        if args.world_size <= 1 {
+            bail!("--zero3 requires --world-size > 1");
+        }
+        if args.rdma_device.is_none() {
+            bail!("--zero3 requires --rdma-device");
+        }
+        if args.peer_ips.len() != args.world_size {
+            bail!(
+                "--zero3 requires --peer-ips with exactly one IP per rank ({} expected)",
+                args.world_size
+            );
+        }
+    }
+    if args.zero3_chunk_bytes.is_some_and(|bytes| bytes < 4) {
+        bail!("--zero3-chunk-bytes must be at least 4");
     }
     Ok(())
 }
@@ -1142,8 +1188,13 @@ fn main() -> Result<()> {
     let mut optimizer_steps = 0usize;
     let mut supervised_tokens = 0usize;
     let mut final_loss = None;
+    let need_offload_store = if args.zero3 {
+        args.moment_offload
+    } else {
+        args.cpu_offload
+    };
     let mut offload_store: Option<Box<dyn hierarchos_vulkan::param_offload::OffloadStore>> =
-        if args.cpu_offload {
+        if need_offload_store {
             // In distributed mode every rank must use its own SSD mmap file, or
             // they would corrupt each other's optimizer state on a shared path.
             let effective_ssd_path: Option<PathBuf> = match &args.offload_ssd_path {
@@ -1199,14 +1250,57 @@ fn main() -> Result<()> {
     // Enable the chunked (per-chunk synced) optimizer-state offload. The
     // optimizer pass inside train_step then restores/stepts/evicts moments one
     // chunk at a time, so the full moment state never resides on the GPU.
+    // Under ZeRO-3 the store backs the moment offload instead: non-owned
+    // params' AdamW moments are evicted to it after the first optimizer step.
     if let Some(store) = offload_store.take() {
-        const CHUNK_BYTES: usize = 1024 * 1024 * 1024; // 1 GiB of moments per chunk
-        graph.enable_chunked_optimizer_offload(store, CHUNK_BYTES)?;
+        if args.zero3 {
+            graph.enable_zero3_moment_offload(store)?;
+        } else {
+            const CHUNK_BYTES: usize = 1024 * 1024 * 1024; // 1 GiB of moments per chunk
+            graph.enable_chunked_optimizer_offload(store, CHUNK_BYTES)?;
+        }
+    }
+    // ZeRO-3: shard the flat parameter buffer across ranks, connect the RDMA
+    // ring for allgather/reduce-scatter, and install it as the ZeRO-3 transport.
+    // The ring is set once (unlike the AllReduce path) because it is a real
+    // stateless transport shared across steps.
+    if args.zero3 {
+        anyhow::ensure!(
+            args.rank < args.world_size,
+            "--rank must be smaller than --world-size"
+        );
+        let rdma_device = args
+            .rdma_device
+            .as_deref()
+            .context("--rdma-device is required with --zero3")?;
+        let total = graph.init_zero3(args.rank, args.world_size)?;
+        eprintln!(
+            "zero3_training rank={} world_size={} shardable_values={} moment_offload={} peer_ips={:?} rdma_device={rdma_device}",
+            args.rank,
+            args.world_size,
+            total,
+            args.moment_offload,
+            args.peer_ips
+        );
+        const RING_PORT_BASE: u16 = 18730;
+        const GRAD_CHUNK_VALUES: usize = 262144;
+        const RING_ALLREDUCE_COUNT: usize = 256;
+        let ring = hierarchos_vulkan::distributed::RingTransport::connect(
+            rdma_device,
+            args.rank,
+            args.world_size,
+            RING_PORT_BASE,
+            &args.peer_ips,
+            GRAD_CHUNK_VALUES,
+            RING_ALLREDUCE_COUNT,
+        )?;
+        let chunk_bytes = args.zero3_chunk_bytes.unwrap_or(256 * 1024 * 1024);
+        graph.set_zero3_ring_and_chunk_bytes(Box::new(ring), chunk_bytes)?;
     }
     // Distributed AllReduce: connect the RDMA ring and install the gradient
     // exchanger. Requires the post-submit optimizer (`--cpu-offload`) so the
     // optimizer runs after the gradient exchange.
-    if args.world_size > 1 {
+    else if args.world_size > 1 {
         anyhow::ensure!(
             args.rank < args.world_size,
             "--rank must be smaller than --world-size"
@@ -1323,6 +1417,8 @@ fn main() -> Result<()> {
         supervised_tokens,
         final_loss,
         peft,
+        zero3: args.zero3,
+        world_size: args.world_size,
         output: args.output.display().to_string(),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
