@@ -1485,18 +1485,20 @@ impl RingExchange for LoopbackTrainStepRing {
         // chunk completes and no new begin_chunk is called.
         if self.chunk_done {
             if !self.rs_initialized {
-                // Use the actual send data from the first reduce-scatter
-                // exchange to seed the simulation (all ranks identical).
-                let total = self.world * send_data.len();
-                let mut sim = vec![vec![0.0f32; total]; self.world];
+                // Seed the simulation. In the loopback redundant-backward model
+                // every rank holds an identical full gradient buffer, so the
+                // reduce-scatter rotation only needs the correct block LENGTHS
+                // to drive the real `ring_reduce_scatter` without panicking:
+                // the only block the test verifies is the shard block, whose
+                // gradient is never overwritten by reduce-scatter. We therefore
+                // seed from `self.full` (same length/structure as the gradient
+                // buffer) rather than inferring the total from a single send
+                // block (which only matches when the total divides by world).
+                let total = self.full.len();
+                let mut sim = vec![self.full.clone(); self.world];
                 let bs = (total + self.world - 1) / self.world;
                 let range_of = |b: usize| (b * bs)..(b * bs + bs).min(total);
                 let modn = |x: isize| (((x % self.world as isize) + self.world as isize) % self.world as isize) as usize;
-                for r in 0..self.world {
-                    let b = modn(r as isize);
-                    let sr = range_of(b);
-                    sim[r][sr.clone()].copy_from_slice(&send_data[..sr.len()]);
-                }
                 // Simulate the reduce-scatter rotation with the actual data.
                 let mut received: Vec<Vec<Vec<f32>>> = vec![Vec::new(); self.world];
                 for s in 0..self.world - 1 {

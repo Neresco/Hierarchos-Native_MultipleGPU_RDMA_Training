@@ -64261,6 +64261,16 @@ impl VulkanTransformer {
         Ok(())
     }
 
+    /// Current stats of the ZeRO-3 moment-offload store: (offloaded bytes,
+    /// offloaded param count). Returns `(0, 0)` when no store is configured or
+    /// nothing has been offloaded yet.
+    pub fn zero3_moment_store_stats(&self) -> (usize, usize) {
+        match self.zero3_moment_store.as_ref() {
+            Some(store) => (store.offloaded_bytes(), store.param_count()),
+            None => (0, 0),
+        }
+    }
+
     /// Install a gradient exchanger for distributed (AllReduce) training. When
     /// set, `train_step` reads the full gradient vector, hands it to the
     /// exchanger (ring allreduce), and writes the result back before the
@@ -91449,6 +91459,32 @@ mod tests {
         tiny_gpt2_vulkan_graph_with_encoder_seq_len(device, None)
     }
 
+    /// A larger GPT-2-style graph used by the Phase 8 end-to-end smoke test.
+    /// Scaled dimensions force real multi-shard ZeRO-3 accounting across world=6
+    /// while staying small enough for the in-process loopback ring.
+    fn medium_gpt2_config() -> serde_json::Value {
+        serde_json::json!({
+            "model_type": "gpt2",
+            "vocab_size": 256,
+            "n_positions": 32,
+            "n_embd": 64,
+            "n_layer": 8,
+            "n_head": 4,
+            "n_inner": 128,
+            "activation_function": "gelu_new",
+            "layer_norm_epsilon": 1.0e-5,
+            "tie_word_embeddings": true,
+            "scale_attn_weights": true,
+            "scale_attn_by_inverse_layer_idx": false,
+            "reorder_and_upcast_attn": false,
+            "add_cross_attention": false
+        })
+    }
+
+    fn medium_gpt2_vulkan_graph(device: VulkanDevice) -> Result<VulkanTransformer> {
+        gpt2_family_vulkan_graph(device, medium_gpt2_config(), None)
+    }
+
     fn tiny_gpt2_cross_attention_vulkan_graph(
         device: VulkanDevice,
         encoder_seq_len: usize,
@@ -91460,7 +91496,15 @@ mod tests {
         device: VulkanDevice,
         encoder_seq_len: Option<usize>,
     ) -> Result<VulkanTransformer> {
-        let mut value = tiny_gpt2_config();
+        gpt2_family_vulkan_graph(device, tiny_gpt2_config(), encoder_seq_len)
+    }
+
+    fn gpt2_family_vulkan_graph(
+        device: VulkanDevice,
+        value: serde_json::Value,
+        encoder_seq_len: Option<usize>,
+    ) -> Result<VulkanTransformer> {
+        let mut value = value;
         value["add_cross_attention"] = serde_json::json!(encoder_seq_len.is_some());
         let config = VulkanTransformerConfig::from_hf_value(&value)?;
         let d = config.hidden_size;
@@ -130708,6 +130752,137 @@ mod tests {
                 );
             }
         }
+        Ok(())
+    }
+
+    /// Phase 8 end-to-end smoke: a world=6 loopback run of the full ZeRO-3
+    /// train_step path (chunked forward gather, gradient reduce-scatter, sharded
+    /// optimizer, and SSD-backed moment offload) against a single-rank baseline.
+    ///
+    /// The medium model is scaled so each rank keeps a strict 1/6 subset and a
+    /// tiny gather budget forces multiple ring allgathers. We assert:
+    ///  - loss parity: each rank/step loss matches the unsharded baseline;
+    ///  - checksum parity: each rank's owned slice equals the baseline's;
+    ///  - sharding accounting: shard size is exactly the layout slice and < total;
+    ///  - SSD offload: after step 1 the moment store holds offloaded bytes for the
+    ///    non-owned params (proving the mmap path ran without error).
+    #[test]
+    fn zero3_six_rank_loopback_end_to_end_smoke() -> Result<()> {
+        use crate::distributed::LoopbackTrainStepRing;
+        use crate::param_offload::{MmapOffloadStore, OffloadStore};
+        let device = VulkanDevice::new()?;
+        let world = 6usize;
+        let steps = 3usize;
+
+        // Training data sized to the medium model (seq 8, vocab 256).
+        let ids: Vec<u32> = (0..8u32).map(|k| 3 + (k * 7) % 250).collect();
+        let targets: Vec<u32> = (0..8u32).map(|k| 4 + (k * 7) % 250).collect();
+        let mask = vec![1.0f32; 8];
+        let hyper = AdamWHyperParams {
+            lr: 0.001,
+            eps: 0.001,
+            weight_decay: 0.01,
+            ..Default::default()
+        };
+
+        // --- Baseline: single-rank reference (no sharding). ---
+        let mut baseline = medium_gpt2_vulkan_graph(device.clone())?;
+        let total = baseline.zero3_total_values();
+        assert!(total > 0, "medium graph must have shardable params");
+        let initial_full: Vec<f32> =
+            baseline.read_all_values()?.into_iter().take(total).collect();
+        let mut baseline_losses: Vec<f32> = Vec::with_capacity(steps);
+        let mut baseline_slices: Vec<Vec<f32>> = Vec::with_capacity(steps);
+        for _ in 0..steps {
+            let res = baseline.train_step(&ids, &targets, &mask, &mask, hyper)?;
+            baseline_losses.push(res.loss);
+            baseline_slices
+                .push(baseline.read_all_values()?.into_iter().take(total).collect());
+        }
+
+        // Temp mmap backing files, one per rank (simulating per-rank SSD offload).
+        let tmp_root = std::env::temp_dir().join(format!(
+            "hierarchos-vulkan-zero3-phase8-smoke-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&tmp_root)?;
+
+        let layout = crate::zero3::ShardLayout::new(total, world);
+        let owner_ranges = layout.segments();
+        // Tiny gather budget forces the medium model across many ring gathers.
+        let chunk_bytes = 256 * 4;
+
+        for rank in 0..world {
+            let mut r = medium_gpt2_vulkan_graph(device.clone())?;
+            r.init_zero3(rank, world)?;
+
+            // Sharding accounting: each rank keeps exactly its 1/world slice.
+            let shard_range = layout.slice_range(rank);
+            assert_eq!(
+                r.zero3_shard.len(),
+                shard_range.len(),
+                "rank {rank} shard size must equal layout slice"
+            );
+            assert!(
+                r.zero3_shard.len() < total,
+                "rank {rank} shard must be a strict subset of the full buffer"
+            );
+
+            // SSD-backed moment offload: capacity generously covers the
+            // non-owned moments (up to 2 f32 moments per non-owned element).
+            let mmap_capacity = total * 8;
+            let mmap_path = tmp_root.join(format!("rank{rank}.bin"));
+            let store = MmapOffloadStore::new(&mmap_path, mmap_capacity)?;
+            r.enable_zero3_moment_offload(Box::new(store))?;
+
+            for step in 0..steps {
+                let full: Vec<f32> = if step == 0 {
+                    initial_full.clone()
+                } else {
+                    baseline_slices[step - 1].clone()
+                };
+                // Sync the rank's local shard with the ring seed so forward
+                // gathers send the correct segment.
+                r.zero3_shard = full[shard_range.clone()].to_vec();
+
+                let ring =
+                    LoopbackTrainStepRing::new(rank, world, owner_ranges.clone(), full);
+                r.set_zero3_ring_and_chunk_bytes(Box::new(ring), chunk_bytes)?;
+
+                let res = r.train_step(&ids, &targets, &mask, &mask, hyper)?;
+                assert!(
+                    (res.loss - baseline_losses[step]).abs() < 1e-5,
+                    "rank {rank} step {step} loss {} != baseline {}",
+                    res.loss,
+                    baseline_losses[step]
+                );
+
+                // Checksum parity: the rank's owned slice equals the baseline.
+                let base_slice = &baseline_slices[step][shard_range.clone()];
+                assert_eq!(
+                    &r.zero3_shard, base_slice,
+                    "rank {rank} step {step} owned slice must match baseline"
+                );
+            }
+
+            // Verify the SSD moment-offload actually stored bytes after step 1.
+            let (bytes, count) = r.zero3_moment_store_stats();
+            assert!(
+                count > 0 && bytes > 0,
+                "rank {rank} expected non-owned moments offloaded to SSD (got {count} params, {bytes} bytes)"
+            );
+
+            // Backing file exists on disk (SSD path exercised).
+            let meta = fs::metadata(&mmap_path)?;
+            assert!(meta.len() > 0, "rank {rank} moment-offload file must exist");
+        }
+
+        // Cleanup temp files.
+        for rank in 0..world {
+            let _ = fs::remove_file(tmp_root.join(format!("rank{rank}.bin")));
+        }
+        let _ = fs::remove_dir(&tmp_root);
+
         Ok(())
     }
 }
