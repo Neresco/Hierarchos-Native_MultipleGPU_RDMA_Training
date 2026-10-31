@@ -64167,6 +64167,45 @@ impl VulkanTransformer {
         Ok(())
     }
 
+    /// ZeRO-3 post-submit optimizer: step every trainable using the gradients
+    /// that were just written back by `write_all_gradients` (which contains the
+    /// reduce-scattered world-averaged gradient for this rank's owned block and
+    /// stale values elsewhere). Runs in a fresh ComputeBatch so it executes
+    /// after the forward+backward submit and after the reduce-scatter exchange.
+    ///
+    /// Non-owned parameters are stepped with stale gradients; their updated
+    /// values are discarded by [`Self::zero3_reshard_all`] which only persists
+    /// this rank's slice. This is the Phase 6 "step all" strategy; stepping
+    /// only owned slices is a later optimization.
+    fn zero3_run_optimizer(&mut self, next_step: u32, hyper: AdamWHyperParams) -> Result<()> {
+        let device = self.device.clone();
+        let kernels = &*self.kernels as *const TransformerKernels;
+        // SAFETY: kernels is only read (record_step takes a shared ref) and
+        // points into self.kernels which stays valid for this call.
+        let kernels_read = unsafe { &*kernels };
+
+        let mut cmds = vulkan::ComputeBatch::new(&device)?;
+
+        {
+            let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+            self.collect_trainables(&mut trainables);
+            for t in trainables.iter() {
+                t.record_step(&mut cmds, kernels_read, next_step, hyper)?;
+            }
+        }
+
+        // Tied embedding / shared lm_head.
+        let tied_step = self.shared_embedding.record_step(&mut cmds, hyper)?;
+        if tied_step != next_step {
+            bail!(
+                "tied embedding optimizer step {tied_step} diverged from Transformer step {next_step}"
+            );
+        }
+
+        cmds.submit()?;
+        Ok(())
+    }
+
     /// Install a gradient exchanger for distributed (AllReduce) training. When
     /// set, `train_step` reads the full gradient vector, hands it to the
     /// exchanger (ring allreduce), and writes the result back before the
@@ -83152,7 +83191,7 @@ impl VulkanTransformer {
                         token_embedding_grad,
                     )?;
             }
-        if !self.chunked_offload_enabled {
+        if !self.chunked_offload_enabled && !self.zero3_enabled {
             if !peft_mode {
                 if let Some(position_embedding) = self
                     .position_embedding
@@ -83305,7 +83344,7 @@ impl VulkanTransformer {
                 embedding_project.record_step(&mut commands, &self.kernels, next_step, hyper)?;
             }
         }
-        if !self.chunked_offload_enabled {
+        if !self.chunked_offload_enabled && !self.zero3_enabled {
         for (layer, active) in self.layers.iter().zip(&active_layers) {
             if *active {
                 layer.record_step(&mut commands, &self.kernels, next_step, hyper)?;
@@ -83399,7 +83438,21 @@ impl VulkanTransformer {
         }
         self.step = next_step;
         let loss = self.loss_sum_reducer.read_sum()?;
-        if self.gradient_exchanger.is_some() {
+        if self.zero3_enabled {
+            // ZeRO-3: reduce-scatter gradients, then run the optimizer on the
+            // reduced grads. Owned blocks get the world-averaged gradient;
+            // non-owned blocks are stale but will be discarded by reshard.
+            let mut grads = self.read_all_gradients()?;
+            if self.zero3_world > 1 {
+                self.zero3_reduce_scatter_gradients(&mut grads)?;
+            }
+            self.write_all_gradients(&grads)?;
+            self.zero3_run_optimizer(next_step, hyper)?;
+            // Copy this rank's owned slice back into the shard and stub every
+            // full buffer, so the next step's gathers start from the freshly
+            // optimized shard.
+            self.zero3_reshard_all()?;
+        } else if self.gradient_exchanger.is_some() {
             // Distributed AllReduce: sum local gradients with peers, then step
             // on the reduced gradient. This must run before the optimizer.
             let mut exchanger = self
@@ -83418,13 +83471,6 @@ impl VulkanTransformer {
                 .context("chunked offload store is missing")?;
             self.run_chunked_optimizer(&mut *store, next_step, hyper)?;
             self.chunked_offload_store = Some(store);
-        }
-        // ZeRO-3: the optimizer (record_step above) wrote the updated values
-        // into the full materialized buffers. Copy this rank's slice back into
-        // the owned shard and stub every full buffer, so the next step's
-        // gathers start from the freshly-optimized shard.
-        if self.zero3_enabled {
-            self.zero3_reshard_all()?;
         }
         Ok(VulkanTransformerStepResult {
             loss,
@@ -130516,6 +130562,92 @@ mod tests {
                 assert_eq!(
                     a, b,
                     "rank {rank} reduce-scatter owned slice must equal the AllReduce block"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Phase 6 step parity: with world=2 and a [`LoopbackTrainStepRing`] that
+    /// handles both forward gathers and gradient reduce-scatter, running N
+    /// `train_step` calls must leave each rank's owned slice identical to the
+    /// corresponding slice of a single-rank baseline after N steps.
+    #[test]
+    fn zero3_two_rank_step_parity() -> Result<()> {
+        use crate::distributed::{LoopbackTrainStepRing, reduce_scatter_owned_block};
+        let device = VulkanDevice::new()?;
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8];
+        let targets = [2, 3, 4, 5, 6, 7, 8, 9];
+        let mask = [1.0f32; 8];
+        let hyper = AdamWHyperParams {
+            lr: 0.001,
+            eps: 0.001,
+            weight_decay: 0.01,
+            ..Default::default()
+        };
+        let world = 2usize;
+        let steps = 3usize;
+
+        // Baseline: single-rank model run for `steps` iterations. Record the
+        // shardable flat values after each step.
+        let mut baseline = tiny_gpt2_vulkan_graph(device.clone())?;
+        let total = baseline.zero3_total_values();
+        assert!(total > 0, "tiny graph must have shardable params");
+        // Capture initial params BEFORE any step (used to seed scratch models).
+        let initial_full: Vec<f32> = baseline
+            .read_all_values()?
+            .into_iter()
+            .take(total)
+            .collect();
+        let mut baseline_slices: Vec<Vec<f32>> = Vec::with_capacity(steps);
+        for _ in 0..steps {
+            baseline.train_step(&ids, &targets, &mask, &mask, hyper)?;
+            let full = baseline.read_all_values()?;
+            baseline_slices.push(full.into_iter().take(total).collect());
+        }
+
+        // For each rank, run `steps` train_steps with a combined ring. After
+        // each step, verify the rank's owned slice matches the baseline.
+        let layout = crate::zero3::ShardLayout::new(total, world);
+        let owner_ranges = layout.segments();
+        for rank in 0..world {
+            let mut r = tiny_gpt2_vulkan_graph(device.clone())?;
+            r.init_zero3(rank, world)?;
+
+            for step in 0..steps {
+                // The full params before this step: initial for step 0, or the
+                // previous step's baseline result.
+                let full: Vec<f32> = if step == 0 {
+                    initial_full.clone()
+                } else {
+                    baseline_slices[step - 1].clone()
+                };
+
+                // Sync the rank's local shard with the ring data so the forward
+                // gathers send the correct segment (the rank's shard was updated
+                // by the previous step's reshard, but for step 0 it's initial).
+                let shard_range = layout.slice_range(rank);
+                r.zero3_shard = full[shard_range.clone()].to_vec();
+
+                // Build the combined ring: gather uses `full`, reduce-scatter
+                // seeds from the first exchange's send data.
+                let ring = LoopbackTrainStepRing::new(
+                    rank, world, owner_ranges.clone(), full,
+                );
+                r.set_zero3_ring_and_chunk_bytes(Box::new(ring), 256 * 4)?;
+
+                // Run the full train_step (forward + backward + reduce-scatter
+                // + optimizer + reshard).
+                r.train_step(&ids, &targets, &mask, &mask, hyper)?;
+
+                // After reshard, the rank's shard holds its owned slice of the
+                // updated params. Compare directly to the baseline's slice.
+                let rank_slice = &r.zero3_shard;
+                let base_slice = &baseline_slices[step][shard_range.clone()];
+                assert_eq!(
+                    rank_slice, base_slice,
+                    "rank {rank} step {step} shard must match baseline slice {:?}",
+                    shard_range
                 );
             }
         }

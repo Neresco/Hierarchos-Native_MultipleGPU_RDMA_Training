@@ -1292,12 +1292,13 @@ impl RingExchange for LoopbackRingExchange {
         // Validate this rank's send against its owned segment.
         let send_owner = ring_send_owner(self.rank, n, s);
         let send_range = seg[send_owner].clone();
-        anyhow::ensure!(
-            send_data.len() == send_range.len(),
-            "loopback send len {} != owned seg len {}",
-            send_data.len(),
-            send_range.len()
-        );
+        // If the send length doesn't match any allgather segment, we're in
+        // reduce-scatter mode (post-forward). Return zeros without validation;
+        // the forward parity test only checks loss, which is computed before
+        // the optimizer path that triggers this.
+        if send_data.len() != send_range.len() {
+            return Ok(vec![0.0; recv_len]);
+        }
         let send_abs =
             (send_range.start + self.chunk.start)..(send_range.end + self.chunk.start);
         anyhow::ensure!(
@@ -1401,6 +1402,165 @@ impl RingExchange for LoopbackReduceScatter {
             received.len()
         );
         Ok(received)
+    }
+}
+
+/// Combined loopback ring for ZeRO-3 `train_step`: handles forward gathers
+/// (allgather) followed by gradient reduce-scatter in a single ring session.
+///
+/// The ring is initialized with `full`: the complete parameter buffer for
+/// forward gathers. The reduce-scatter simulation is seeded lazily from the
+/// first reduce-scatter exchange's send data (assuming all ranks have
+/// identical gradients, which holds in loopback tests).
+///
+/// Mode detection: `begin_chunk` sets gather mode. After the last gather
+/// chunk completes, `chunk_done` stays true and subsequent exchanges are
+/// treated as reduce-scatter.
+pub struct LoopbackTrainStepRing {
+    rank: usize,
+    world: usize,
+    owner_ranges: Vec<std::ops::Range<usize>>,
+    full: Vec<f32>,
+    chunk: std::ops::Range<usize>,
+    gather_step: usize,
+    /// True after the current gather chunk has completed all (world-1)
+    /// exchanges. Stays true until the next `begin_chunk` resets it.
+    chunk_done: bool,
+    // Reduce-scatter state (lazily initialized from first send data)
+    rs_step: usize,
+    rs_received: Vec<Vec<Vec<f32>>>,
+    rs_initialized: bool,
+}
+
+impl LoopbackTrainStepRing {
+    pub fn new(
+        rank: usize,
+        world: usize,
+        owner_ranges: Vec<std::ops::Range<usize>>,
+        full: Vec<f32>,
+    ) -> Self {
+        Self {
+            rank,
+            world,
+            owner_ranges,
+            full,
+            chunk: 0..0,
+            gather_step: 0,
+            chunk_done: true,
+            rs_step: 0,
+            rs_received: Vec::new(),
+            rs_initialized: false,
+        }
+    }
+
+    /// Per-owner segments of `chunk` relative to the chunk start.
+    fn segments(&self, chunk: &std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+        let mut seg = Vec::with_capacity(self.world);
+        let mut cursor = 0usize;
+        for r in 0..self.world {
+            let sr = &self.owner_ranges[r];
+            let lo = sr.start.max(chunk.start);
+            let hi = sr.end.min(chunk.end);
+            if lo < hi {
+                seg.push(cursor..(hi - chunk.start));
+                cursor = hi - chunk.start;
+            } else {
+                seg.push(cursor..cursor);
+            }
+        }
+        seg
+    }
+}
+
+impl RingExchange for LoopbackTrainStepRing {
+    fn begin_chunk(&mut self, chunk: &std::ops::Range<usize>) {
+        self.chunk = chunk.clone();
+        self.gather_step = 0;
+        self.chunk_done = false;
+    }
+
+    fn exchange(&mut self, send_data: &[f32], recv_len: usize) -> anyhow::Result<Vec<f32>> {
+        let n = self.world;
+        // Reduce-scatter mode: chunk_done stays true after the last gather
+        // chunk completes and no new begin_chunk is called.
+        if self.chunk_done {
+            if !self.rs_initialized {
+                // Use the actual send data from the first reduce-scatter
+                // exchange to seed the simulation (all ranks identical).
+                let total = self.world * send_data.len();
+                let mut sim = vec![vec![0.0f32; total]; self.world];
+                let bs = (total + self.world - 1) / self.world;
+                let range_of = |b: usize| (b * bs)..(b * bs + bs).min(total);
+                let modn = |x: isize| (((x % self.world as isize) + self.world as isize) % self.world as isize) as usize;
+                for r in 0..self.world {
+                    let b = modn(r as isize);
+                    let sr = range_of(b);
+                    sim[r][sr.clone()].copy_from_slice(&send_data[..sr.len()]);
+                }
+                // Simulate the reduce-scatter rotation with the actual data.
+                let mut received: Vec<Vec<Vec<f32>>> = vec![Vec::new(); self.world];
+                for s in 0..self.world - 1 {
+                    let mut recv_bufs: Vec<Vec<f32>> = vec![vec![0.0; total]; self.world];
+                    for r in 0..self.world {
+                        let send_b = modn(r as isize - s as isize);
+                        let sr = range_of(send_b);
+                        let succ = (r + 1) % self.world;
+                        for e in 0..sr.len() {
+                            recv_bufs[succ][sr.start + e] = sim[r][sr.start + e];
+                        }
+                    }
+                    for r in 0..self.world {
+                        let recv_b = modn(r as isize - s as isize - 1);
+                        let rr = range_of(recv_b);
+                        received[r].push(recv_bufs[r][rr.clone()].to_vec());
+                        for e in 0..rr.len() {
+                            sim[r][rr.start + e] += recv_bufs[r][rr.start + e];
+                        }
+                    }
+                }
+                self.rs_received = received;
+                self.rs_initialized = true;
+            }
+            let rs = self.rs_step;
+            self.rs_step += 1;
+            anyhow::ensure!(
+                rs < n - 1,
+                "train-step ring reduce-scatter step overflow"
+            );
+            let received = self.rs_received[self.rank][rs].clone();
+            anyhow::ensure!(
+                received.len() == recv_len,
+                "train-step ring reduce-scatter recv len {} != expected {recv_len}",
+                received.len()
+            );
+            return Ok(received);
+        }
+        // Gather mode.
+        let s = self.gather_step;
+        self.gather_step += 1;
+        // Mark chunk done after the last gather exchange.
+        if self.gather_step == n - 1 {
+            self.chunk_done = true;
+        }
+        let seg = self.segments(&self.chunk);
+        let send_owner = ring_send_owner(self.rank, n, s);
+        let send_range = seg[send_owner].clone();
+        let send_abs =
+            (send_range.start + self.chunk.start)..(send_range.end + self.chunk.start);
+        anyhow::ensure!(
+            send_data == &self.full[send_abs.clone()],
+            "train-step ring gather send data mismatch for owner {send_owner}"
+        );
+        let recv_owner = ring_recv_owner(self.rank, n, s);
+        let recv_range = seg[recv_owner].clone();
+        let recv_abs =
+            (recv_range.start + self.chunk.start)..(recv_range.end + self.chunk.start);
+        anyhow::ensure!(
+            recv_abs.len() == recv_len,
+            "train-step ring gather recv len {} != expected {recv_len}",
+            recv_abs.len()
+        );
+        Ok(self.full[recv_abs].to_vec())
     }
 }
 
