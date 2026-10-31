@@ -63889,6 +63889,11 @@ pub struct VulkanTransformer {
     /// Ring exchange used for the ZeRO-3 all-gather / reduce-scatter. A box of
     /// the trait so tests can inject an in-memory loopback for world>1 parity.
     zero3_ring: Option<Box<dyn crate::distributed::RingExchange>>,
+    /// Offload store for ZeRO-3 non-owned param moments (evicted to CPU/SSD
+    /// after first step since they are never read by the optimizer).
+    zero3_moment_store: Option<Box<dyn crate::param_offload::OffloadStore>>,
+    /// Tracks whether non-owned moments have been offloaded yet.
+    zero3_moments_offloaded: bool,
     dropout_seed: u32,
     layerdrop: f32,
     lora_configs: BTreeMap<String, VulkanTransformerLoraConfig>,
@@ -64220,6 +64225,39 @@ impl VulkanTransformer {
         }
 
         cmds.submit()?;
+
+        // Phase 7b: offload non-owned params' moments to CPU/SSD after the
+        // first step. Non-owned params are never stepped, so their moments
+        // are never read again. This frees VRAM for the owned params' moments.
+        if !self.zero3_moments_offloaded {
+            if let Some(mut store_box) = self.zero3_moment_store.take() {
+                let mut cursor = 0usize;
+                let mut trainables: Vec<&mut TrainableParameter> = Vec::new();
+                self.collect_trainables(&mut trainables);
+                for (i, t) in trainables.iter_mut().enumerate() {
+                    let param_start = cursor;
+                    let param_end = cursor + t.len;
+                    cursor = param_end;
+                    let is_owned = param_start < shard_range.end && param_end > shard_range.start;
+                    if !is_owned {
+                        t.offload_moments(&mut *store_box, &format!("zero3.{i}"))?;
+                    }
+                }
+                self.zero3_moment_store = Some(store_box);
+                self.zero3_moments_offloaded = true;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Enable ZeRO-3 moment offloading. Non-owned params' AdamW moments are
+    /// evicted to the store after the first optimizer step, freeing VRAM.
+    pub fn enable_zero3_moment_offload(
+        &mut self,
+        store: Box<dyn crate::param_offload::OffloadStore>,
+    ) -> Result<()> {
+        self.zero3_moment_store = Some(store);
         Ok(())
     }
 
@@ -66743,6 +66781,8 @@ impl VulkanTransformer {
             zero3_shard: Vec::new(),
             zero3_chunk_bytes: 0,
             zero3_ring: None,
+            zero3_moment_store: None,
+            zero3_moments_offloaded: false,
             token_ids: GpuBuffer::zeros_u32(&device, rows)?,
             token_type_ids: GpuBuffer::zeros_u32(&device, rows)?,
             auxiliary_ids: GpuBuffer::zeros_u32(&device, rows)?,
